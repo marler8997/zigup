@@ -7,6 +7,8 @@ const Allocator = mem.Allocator;
 
 const ziget = @import("ziget");
 
+var globalOptionalInstallDir : ?[]const u8 = undefined;
+
 fn find_zigs(allocator: *Allocator) !?[][]u8 {
     const ziglist = std.ArrayList([]u8).init(allocator);
     // don't worry about free for now, this is a short lived program
@@ -81,8 +83,14 @@ fn makeInstallDirString(allocator: *Allocator) ![]const u8 {
     return std.fs.path.join(allocator, &[_][]const u8 {home, "zig"});
 }
 fn getAndCreateInstallDir(allocator: *Allocator) ![]const u8 {
-    const installDir = try makeInstallDirString(allocator);
-    errdefer allocator.free(installDir);
+    var optionalDirToFreeOnError : ?[]const u8 = null;
+    errdefer if (optionalDirToFreeOnError) |dir| allocator.free(dir);
+
+    const installDir = init: {
+        if (globalOptionalInstallDir) |dir| break :init dir;
+        optionalDirToFreeOnError = try makeInstallDirString(allocator);
+        break :init optionalDirToFreeOnError.?;
+    };
     std.debug.assert(std.fs.path.isAbsolute(installDir));
     std.debug.warn("install directory '{}'\n", .{installDir});
     loggyMakeDirAbsolute(installDir) catch |e| switch (e) {
@@ -101,6 +109,14 @@ fn makeZigPathLinkString(allocator: *Allocator) ![]const u8 {
     return try std.fs.path.join(allocator, &[_][]const u8 {home, "bin", "zig"});
 }
 
+// TODO: this should be in standard lib
+fn toAbsolute(allocator: *Allocator, path: []const u8) ![] u8 {
+    std.debug.assert(!std.fs.path.isAbsolute(path));
+    const cwd = try std.process.getCwdAlloc(allocator);
+    defer allocator.free(cwd);
+    return std.fs.path.join(allocator, &[_][]const u8 {cwd, path});
+}
+
 fn help() void {
     std.io.getStdErr().writeAll(
         \\Download and manage zig compilers.
@@ -114,7 +130,19 @@ fn help() void {
         \\Uncommon Usage:
         \\
         \\  zigup fetch-index             download and print the download index json
+        \\
+        \\Common Options:
+        \\  --install-dir DIR             override the default install location
     ) catch unreachable;
+}
+
+fn getCmdOpt(args: [][]const u8, i: *usize) ![]const u8 {
+    i.* += 1;
+    if (i.* == args.len) {
+        std.debug.warn("Error: option '{}' requires an argument\n", .{args[i.* - 1]});
+        return error.AlreadyReported;
+    }
+    return args[i.*];
 }
 
 pub fn main() !u8 {
@@ -127,13 +155,36 @@ pub fn main2() !u8 {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     const allocator = &arena.allocator;
 
-    var args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
-    if (args.len <= 1) {
+    const argsArray = try std.process.argsAlloc(allocator);
+    // no need to free, os will do it
+    //defer std.process.argsFree(allocator, argsArray);
+
+    var args = if (argsArray.len == 0) argsArray else argsArray[1..];
+
+    //
+    // parse common options
+    //
+    {
+        var i : usize = 0;
+        var newlen : usize = 0;
+        while (i < args.len) : (i += 1) {
+            const arg = args[i];
+            if (std.mem.eql(u8, "--install-dir", arg)) {
+                globalOptionalInstallDir = try getCmdOpt(args, &i);
+                if (!std.fs.path.isAbsolute(globalOptionalInstallDir.?)) {
+                    globalOptionalInstallDir = try toAbsolute(allocator, globalOptionalInstallDir.?);
+                }
+            } else {
+                args[newlen] = args[i];
+                newlen += 1;
+            }
+        }
+        args = args[0..newlen];
+    }
+    if (args.len == 0) {
         help();
         return 1;
     }
-    args = args[1..];
     if (std.mem.eql(u8, "fetch-index", args[0])) {
         if (args.len != 1) {
             std.debug.warn("Error: 'index' command requires 0 arguments but got {}\n", .{args.len - 1});
@@ -225,7 +276,7 @@ fn fetchCompiler(allocator: *Allocator, versionArg: []const u8, setDefault: SetD
     if (latest) {
         const latestSymlink = try std.fs.path.join(allocator, &[_][]const u8 {installDir, "latest"});
         defer allocator.free(latestSymlink);
-        _ = try loggyUpdateSymlink(versionUrl.version, latestSymlink);
+        _ = try loggyUpdateSymlink(versionUrl.version, latestSymlink, .{.is_directory=true});
     }
     if (setDefault == .setDefault) {
         try setDefaultCompiler(allocator, compilerDir);
@@ -280,18 +331,21 @@ fn loggyDeleteTreeAbsolute(dirAbsolute: []const u8) !void {
 
 }
 
-pub fn loggyRename(old_path: []const u8, new_path: []const u8) !void {
+pub fn loggyRenameAbsolute(old_path: []const u8, new_path: []const u8) !void {
     std.debug.warn("mv '{}' '{}'\n", .{old_path, new_path});
-    try std.os.rename(old_path, new_path);
+    try std.fs.renameAbsolute(old_path, new_path);
 }
 
-pub fn loggySymlink(target_path: []const u8, sym_link_path: []const u8) !void {
+pub fn loggySymlinkAbsolute(target_path: []const u8, sym_link_path: []const u8, flags: std.fs.SymLinkFlags) !void {
     std.debug.warn("ln -s '{}' '{}'\n", .{target_path, sym_link_path});
+    // NOTE: can't use symLinkAbsolute because it requires target_path to be absolute but we don't want that
+    //       not sure if it is a bug in the standard lib or not
+    //try std.fs.symLinkAbsolute(target_path, sym_link_path, flags);
     try std.os.symlink(target_path, sym_link_path);
 }
 
 /// returns: true if the symlink was updated, false if it was already set to the given `target_path`
-pub fn loggyUpdateSymlink(target_path: []const u8, sym_link_path: []const u8) !bool {
+pub fn loggyUpdateSymlink(target_path: []const u8, sym_link_path: []const u8, flags: std.fs.SymLinkFlags) !bool {
     var current_target_path_buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
     if (std.fs.readLinkAbsolute(sym_link_path, &current_target_path_buffer)) |current_target_path| {
         if (std.mem.eql(u8, target_path, current_target_path)) {
@@ -303,7 +357,7 @@ pub fn loggyUpdateSymlink(target_path: []const u8, sym_link_path: []const u8) !b
         error.FileNotFound => {},
         else => return e,
     }
-    try loggySymlink(target_path, sym_link_path);
+    try loggySymlinkAbsolute(target_path, sym_link_path, flags);
     return true; // updated
 }
 
@@ -369,7 +423,7 @@ fn setDefaultCompiler(allocator: *Allocator, compilerDir: []const u8) !void {
         // TODO: create zig.bat file
         @panic("setDefaultCompiler not implemented in Windows");
     } else {
-        _ = try loggyUpdateSymlink(linkTarget, pathLink);
+        _ = try loggyUpdateSymlink(linkTarget, pathLink, .{});
     }
 }
 
@@ -421,14 +475,14 @@ fn installCompiler(allocator: *Allocator, compilerDir: []const u8, url: []const 
         defer allocator.free(extractedDir);
         const normalizedDir = try std.fs.path.join(allocator, &[_][]const u8 {installingDir, "files"});
         defer allocator.free(normalizedDir);
-        try loggyRename(extractedDir, normalizedDir);
+        try loggyRenameAbsolute(extractedDir, normalizedDir);
     }
 
     // TODO: write date information (so users can sort compilers by date)
 
 
     // finish installation by renaming the install dir
-    try loggyRename(installingDir, compilerDir);
+    try loggyRenameAbsolute(installingDir, compilerDir);
 }
 
 

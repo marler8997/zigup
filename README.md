@@ -54,6 +54,8 @@ My breakdown of the operations I'd like.
 
 I think to manage compilers, users can mark them as "keep".  The tool will "keep" all compilers marked as "keep" and also the default compiler. I could probably just create an empty file called "keep" to make that mark.
 
+> NOTE: by default `zigup list` should display more information, like release date, its "keep" value, etc.  Maybe it should also sort them, probably by release date?
+
 # Building
 
 * Depends on https://github.com/marler8997/ziget.  `build.zig` assumes it exists alongside this repository.
