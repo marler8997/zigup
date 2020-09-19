@@ -31,7 +31,7 @@ fn find_zigs(allocator: *Allocator) !?[][]u8 {
     @panic("not impl");
 }
 
-fn download(allocator: *Allocator, url: []const u8, writer: var) !void {
+fn download(allocator: *Allocator, url: []const u8, writer: anytype) !void {
     var downloadOptions = ziget.request.DownloadOptions {
         .flags = 0,
         .allocator = allocator,
@@ -213,10 +213,10 @@ fn fetchCompiler(allocator: *Allocator, versionArg: []const u8, setDefault: SetD
         if (!latest)
             break :blk VersionUrl { .version = versionArg, .url = try getDefaultUrl(allocator, versionArg) };
         optionalDownloadIndex = try fetchDownloadIndex(allocator);
-        const master = optionalDownloadIndex.?.json.root.Object.get("master").?.value;
-        const compilerVersion = master.Object.get("version").?.value.String;
-        const masterLinux = master.Object.get("x86_64-linux").?.value;
-        const masterLinuxTarball = masterLinux.Object.get("tarball").?.value.String;
+        const master = optionalDownloadIndex.?.json.root.Object.get("master").?;
+        const compilerVersion = master.Object.get("version").?.String;
+        const masterLinux = master.Object.get("x86_64-linux").?;
+        const masterLinuxTarball = masterLinux.Object.get("tarball").?.String;
         break :blk VersionUrl { .version = compilerVersion, .url = masterLinuxTarball };
     };
     const compilerDir = try std.fs.path.join(allocator, &[_][]const u8 {installDir, versionUrl.version});
@@ -282,12 +282,12 @@ fn loggyDeleteTreeAbsolute(dirAbsolute: []const u8) !void {
 
 pub fn loggyRename(old_path: []const u8, new_path: []const u8) !void {
     std.debug.warn("mv '{}' '{}'\n", .{old_path, new_path});
-    try std.fs.rename(old_path, new_path);
+    try std.os.rename(old_path, new_path);
 }
 
 pub fn loggySymlink(target_path: []const u8, sym_link_path: []const u8) !void {
     std.debug.warn("ln -s '{}' '{}'\n", .{target_path, sym_link_path});
-    try std.fs.symLink(target_path, sym_link_path);
+    try std.os.symlink(target_path, sym_link_path);
 }
 
 /// returns: true if the symlink was updated, false if it was already set to the given `target_path`
