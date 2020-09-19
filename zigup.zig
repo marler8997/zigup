@@ -7,7 +7,8 @@ const Allocator = mem.Allocator;
 
 const ziget = @import("ziget");
 
-var globalOptionalInstallDir : ?[]const u8 = undefined;
+var globalOptionalInstallDir : ?[]const u8 = null;
+var globalOptionalPathLink : ?[]const u8 = null;
 
 fn find_zigs(allocator: *Allocator) !?[][]u8 {
     const ziglist = std.ArrayList([]u8).init(allocator);
@@ -101,6 +102,8 @@ fn getAndCreateInstallDir(allocator: *Allocator) ![]const u8 {
 }
 
 fn makeZigPathLinkString(allocator: *Allocator) ![]const u8 {
+    if (globalOptionalPathLink) |path| return path;
+
     // for now we're just going to hardcode the path to $HOME/bin/zig
     const home = std.os.getenv("HOME") orelse {
         std.debug.warn("Error: cannot find install directory, $HOME environment variable is not set\n", .{});
@@ -133,6 +136,9 @@ fn help() void {
         \\
         \\Common Options:
         \\  --install-dir DIR             override the default install location
+        \\  --path-link PATH              path to the `zig` symlink that points to the default compiler
+        \\                                this will typically be a file path within a PATH directory so
+        \\                                that the user can just run `zig`
     ) catch unreachable;
 }
 
@@ -173,6 +179,11 @@ pub fn main2() !u8 {
                 globalOptionalInstallDir = try getCmdOpt(args, &i);
                 if (!std.fs.path.isAbsolute(globalOptionalInstallDir.?)) {
                     globalOptionalInstallDir = try toAbsolute(allocator, globalOptionalInstallDir.?);
+                }
+            } else if (std.mem.eql(u8, "--path-link", arg)) {
+                globalOptionalPathLink = try getCmdOpt(args, &i);
+                if (!std.fs.path.isAbsolute(globalOptionalPathLink.?)) {
+                    globalOptionalPathLink = try toAbsolute(allocator, globalOptionalPathLink.?);
                 }
             } else {
                 args[newlen] = args[i];
