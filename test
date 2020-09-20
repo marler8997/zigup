@@ -12,8 +12,8 @@ $zigup default
 $zigup fetch-index
 $zigup 0.5.0
 $zigup fetch 0.5.0
-$zigup latest
+$zigup master
 $zigup list
 $zigup default 0.5.0
-#$zigup default latest
-$zigup latest
+#$zigup default master
+$zigup master

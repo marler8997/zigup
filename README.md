@@ -6,11 +6,11 @@ Download and manage zig compilers.
 
 ```
 # fetch compiler and set it as the default
-zigup latest
+zigup master
 zigup <version>
 
 # fetch compiler
-zigup fetch latest
+zigup fetch master
 zigup fetch <version>
 
 # get the default compiler version
@@ -42,7 +42,7 @@ One compiler will be set as the "default" by linking a symlink or batch file to 
 
 My breakdown of the operations I'd like.
 
-* download latest compiler (`zigup fetch latest`)
+* download latest compiler (`zigup fetch master`)
 * download specific compiler (`zigup fetch <version>`)
 * list all compilers (`zigup list`)
 * set/get the default compiler (sets the link/script in PATH) (`zigup default` and `zigup default <version>`)

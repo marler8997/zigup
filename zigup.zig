@@ -233,8 +233,8 @@ pub fn main2() !u8 {
             defer allocator.free(installDir);
             const compilerDir = try std.fs.path.join(allocator, &[_][]const u8 {installDir, versionString});
             defer allocator.free(compilerDir);
-            if (std.mem.eql(u8, versionString, "latest")) {
-                @panic("set default to latest not implemented");
+            if (std.mem.eql(u8, versionString, "master")) {
+                @panic("set default to master not implemented");
             } else {
                 try setDefaultCompiler(allocator, compilerDir);
             }
@@ -270,9 +270,11 @@ fn fetchCompiler(allocator: *Allocator, versionArg: []const u8, setDefault: SetD
 
     const VersionUrl = struct { version: []const u8, url: []const u8 };
 
-    const latest = std.mem.eql(u8, versionArg, "latest");
+    // NOTE: we only fetch the download index if the user wants to download 'master', we can skip
+    //       this step for all other versions because the version to URL mapping is fixed (see getDefaultUrl)
+    const isMaster = std.mem.eql(u8, versionArg, "master");
     const versionUrl = blk: {
-        if (!latest)
+        if (!isMaster)
             break :blk VersionUrl { .version = versionArg, .url = try getDefaultUrl(allocator, versionArg) };
         optionalDownloadIndex = try fetchDownloadIndex(allocator);
         const master = optionalDownloadIndex.?.json.root.Object.get("master").?;
@@ -284,10 +286,10 @@ fn fetchCompiler(allocator: *Allocator, versionArg: []const u8, setDefault: SetD
     const compilerDir = try std.fs.path.join(allocator, &[_][]const u8 {installDir, versionUrl.version});
     defer allocator.free(compilerDir);
     try installCompiler(allocator, compilerDir, versionUrl.url);
-    if (latest) {
-        const latestSymlink = try std.fs.path.join(allocator, &[_][]const u8 {installDir, "latest"});
-        defer allocator.free(latestSymlink);
-        _ = try loggyUpdateSymlink(versionUrl.version, latestSymlink, .{.is_directory=true});
+    if (isMaster) {
+        const masterSymlink = try std.fs.path.join(allocator, &[_][]const u8 {installDir, "master"});
+        defer allocator.free(masterSymlink);
+        _ = try loggyUpdateSymlink(versionUrl.version, masterSymlink, .{.is_directory=true});
     }
     if (setDefault == .setDefault) {
         try setDefaultCompiler(allocator, compilerDir);
