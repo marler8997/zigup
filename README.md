@@ -5,15 +5,16 @@ Download and manage zig compilers.
 # Commands
 
 ```
-# fetch compiler and set it as the default
-zigup master
+# fetch a compiler and set it as the default
 zigup <version>
+zigup master
+zigup 0.6.0
 
-# fetch compiler
-zigup fetch master
+# fetch a compiler only (do not set it as default)
 zigup fetch <version>
+zigup fetch master
 
-# get the default compiler version
+# print the default compiler version
 zigup default
 
 # set the default compiler
@@ -32,7 +33,7 @@ Things that a user may want to configure
     - on posix, the symlink that lives in a `PATH` directory that points to the default compiler
     - on windows, the batch file that lives in a `PATH` directory that calls forwards calls to the default compiler executable
 
-I may support one or more configuration files.  Possibly a file that lives alongside the executable, or in the user's home directory, possibly both.
+I may support one or more configuration files.  Possibly a file that lives alongside the executable, or in the user's home directory, possibly both.  I've added command-line options to configure the install directory and path symlink for testing, that may be good enough because one can just wrap zigup in a script and forward those options to it.
 
 On Linux/Bsd/Mac (which I will call "Posix" systems) the default install location is `$HOME/zig`.  Not sure what default directory to use for windows yet, maybe `%APPDATA%\zig`.  This directory will contain a unique sub-directory for every version of the compiler that is installed on the system.  When a new compiler is installed, this tool will also add some scripts that will modify an environment to use that version of the zig compiler.
 
@@ -49,6 +50,7 @@ My breakdown of the operations I'd like.
 * set/clear the "keep" flag on a compiler.  Each keep flag can also have a note explaining why it's being kept.
 * clean (cleans compilers without the "keep" flag and aren't the default)
 * set/remove compiler in current environment. Probably require creating a bash/batch script that the user could source for each installed compiler.
+* setup the environment for a specific version of the compiler?
 
 * download zig index file (`zigup fetch-index`)
 
