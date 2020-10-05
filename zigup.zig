@@ -69,7 +69,7 @@ fn downloadToString(allocator: *Allocator, url: []const u8) ![]u8 {
 
 fn ignoreHttpCallback(request: []const u8) void { }
 
-fn makeInstallDirString(allocator: *Allocator) ![]const u8 {
+fn allocInstallDirString(allocator: *Allocator) ![]const u8 {
     // TODO: maybe support ZIG_INSTALL_DIR environment variable?
     // TODO: maybe support a file on the filesystem to configure install dir?
 
@@ -83,21 +83,26 @@ fn makeInstallDirString(allocator: *Allocator) ![]const u8 {
     }
     return std.fs.path.join(allocator, &[_][]const u8 {home, "zig"});
 }
-fn getAndCreateInstallDir(allocator: *Allocator) ![]const u8 {
+const GetInstallDirOptions = struct {
+    create: bool,
+};
+fn getInstallDir(allocator: *Allocator, options: GetInstallDirOptions) ![]const u8 {
     var optionalDirToFreeOnError : ?[]const u8 = null;
     errdefer if (optionalDirToFreeOnError) |dir| allocator.free(dir);
 
     const installDir = init: {
         if (globalOptionalInstallDir) |dir| break :init dir;
-        optionalDirToFreeOnError = try makeInstallDirString(allocator);
+        optionalDirToFreeOnError = try allocInstallDirString(allocator);
         break :init optionalDirToFreeOnError.?;
     };
     std.debug.assert(std.fs.path.isAbsolute(installDir));
     std.debug.warn("install directory '{}'\n", .{installDir});
-    loggyMakeDirAbsolute(installDir) catch |e| switch (e) {
-        error.PathAlreadyExists => {},
-        else => return e,
-    };
+    if (options.create) {
+        loggyMakeDirAbsolute(installDir) catch |e| switch (e) {
+            error.PathAlreadyExists => {},
+            else => return e,
+        };
+    }
     return installDir;
 }
 
@@ -229,7 +234,7 @@ pub fn main2() !u8 {
         }
         if (args.len == 2) {
             const versionString = args[1];
-            const installDir = try getAndCreateInstallDir(allocator);
+            const installDir = try getInstallDir(allocator, .{.create = true});
             defer allocator.free(installDir);
             const compilerDir = try std.fs.path.join(allocator, &[_][]const u8 {installDir, versionString});
             defer allocator.free(compilerDir);
@@ -259,7 +264,7 @@ pub fn main2() !u8 {
 const SetDefault = enum { setDefault, leaveDefault };
 
 fn fetchCompiler(allocator: *Allocator, versionArg: []const u8, setDefault: SetDefault) !void {
-    const installDir = try getAndCreateInstallDir(allocator);
+    const installDir = try getInstallDir(allocator, .{.create = true});
     defer allocator.free(installDir);
 
     var optionalDownloadIndex : ?DownloadIndex = null;
@@ -393,7 +398,7 @@ fn existsAbsolute(absolutePath: []const u8) !bool {
 }
 
 fn listCompilers(allocator: *Allocator) !void {
-    const installDirString = try makeInstallDirString(allocator);
+    const installDirString = try getInstallDir(allocator, .{.create = false});
     defer allocator.free(installDirString);
 
     var installDir = std.fs.cwd().openDir(installDirString, .{.iterate=true}) catch |e| switch (e) {
