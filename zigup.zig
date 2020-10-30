@@ -7,8 +7,8 @@ const Allocator = mem.Allocator;
 
 const ziget = @import("ziget");
 
-var globalOptionalInstallDir : ?[]const u8 = null;
-var globalOptionalPathLink : ?[]const u8 = null;
+var globalOptionalInstallDir: ?[]const u8 = null;
+var globalOptionalPathLink: ?[]const u8 = null;
 
 fn find_zigs(allocator: *Allocator) !?[][]u8 {
     const ziglist = std.ArrayList([]u8).init(allocator);
@@ -18,7 +18,7 @@ fn find_zigs(allocator: *Allocator) !?[][]u8 {
         @panic("windows not implemented");
         //const result = try runGetOutput(allocator, .{"where", "-a", "zig"});
     } else {
-        const whichResult = try cmdlinetool.runGetOutput(allocator, .{"which", "zig"});
+        const whichResult = try cmdlinetool.runGetOutput(allocator, .{ "which", "zig" });
         if (runutil.runFailed(&whichResult)) {
             return null;
         }
@@ -27,15 +27,18 @@ fn find_zigs(allocator: *Allocator) !?[][]u8 {
             std.os.exit(1);
         }
         std.debug.warn("which output:\n{}\n", .{whichResult.stdout});
-        {var i = std.mem.split(whichResult.stdout, "\n"); while (i.next()) |dir| {
-            std.debug.warn("path '{}'\n", .{dir});
-        }}
+        {
+            var i = std.mem.split(whichResult.stdout, "\n");
+            while (i.next()) |dir| {
+                std.debug.warn("path '{}'\n", .{dir});
+            }
+        }
     }
     @panic("not impl");
 }
 
 fn download(allocator: *Allocator, url: []const u8, writer: anytype) !void {
-    var downloadOptions = ziget.request.DownloadOptions {
+    var downloadOptions = ziget.request.DownloadOptions{
         .flags = 0,
         .allocator = allocator,
         .maxRedirects = 10,
@@ -66,28 +69,26 @@ fn downloadToString(allocator: *Allocator, url: []const u8) ![]u8 {
     return responseArrayList.toOwnedSlice();
 }
 
-
-fn ignoreHttpCallback(request: []const u8) void { }
+fn ignoreHttpCallback(request: []const u8) void {}
 
 fn allocInstallDirString(allocator: *Allocator) ![]const u8 {
     // TODO: maybe support ZIG_INSTALL_DIR environment variable?
     // TODO: maybe support a file on the filesystem to configure install dir?
-
     const home = std.os.getenv("HOME") orelse {
         std.debug.warn("Error: cannot find install directory, $HOME environment variable is not set\n", .{});
         return error.MissingHomeEnvironmentVariable;
     };
     if (!std.fs.path.isAbsolute(home)) {
-       std.debug.warn("Error: $HOME environment variable '{}' is not an absolute path\n", .{home});
-       return error.BadHomeEnvironmentVariable;
+        std.debug.warn("Error: $HOME environment variable '{}' is not an absolute path\n", .{home});
+        return error.BadHomeEnvironmentVariable;
     }
-    return std.fs.path.join(allocator, &[_][]const u8 {home, "zig"});
+    return std.fs.path.join(allocator, &[_][]const u8{ home, "zig" });
 }
 const GetInstallDirOptions = struct {
     create: bool,
 };
 fn getInstallDir(allocator: *Allocator, options: GetInstallDirOptions) ![]const u8 {
-    var optionalDirToFreeOnError : ?[]const u8 = null;
+    var optionalDirToFreeOnError: ?[]const u8 = null;
     errdefer if (optionalDirToFreeOnError) |dir| allocator.free(dir);
 
     const installDir = init: {
@@ -114,15 +115,15 @@ fn makeZigPathLinkString(allocator: *Allocator) ![]const u8 {
         std.debug.warn("Error: cannot find install directory, $HOME environment variable is not set\n", .{});
         return error.MissingHomeEnvironmentVariable;
     };
-    return try std.fs.path.join(allocator, &[_][]const u8 {home, "bin", "zig"});
+    return try std.fs.path.join(allocator, &[_][]const u8{ home, "bin", "zig" });
 }
 
 // TODO: this should be in standard lib
-fn toAbsolute(allocator: *Allocator, path: []const u8) ![] u8 {
+fn toAbsolute(allocator: *Allocator, path: []const u8) ![]u8 {
     std.debug.assert(!std.fs.path.isAbsolute(path));
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
-    return std.fs.path.join(allocator, &[_][]const u8 {cwd, path});
+    return std.fs.path.join(allocator, &[_][]const u8{ cwd, path });
 }
 
 fn help() void {
@@ -144,6 +145,7 @@ fn help() void {
         \\  --path-link PATH              path to the `zig` symlink that points to the default compiler
         \\                                this will typically be a file path within a PATH directory so
         \\                                that the user can just run `zig`
+        \\
     ) catch unreachable;
 }
 
@@ -171,13 +173,11 @@ pub fn main2() !u8 {
     //defer std.process.argsFree(allocator, argsArray);
 
     var args = if (argsArray.len == 0) argsArray else argsArray[1..];
-
-    //
     // parse common options
     //
     {
-        var i : usize = 0;
-        var newlen : usize = 0;
+        var i: usize = 0;
+        var newlen: usize = 0;
         while (i < args.len) : (i += 1) {
             const arg = args[i];
             if (std.mem.eql(u8, "--install-dir", arg)) {
@@ -234,9 +234,9 @@ pub fn main2() !u8 {
         }
         if (args.len == 2) {
             const versionString = args[1];
-            const installDir = try getInstallDir(allocator, .{.create = true});
+            const installDir = try getInstallDir(allocator, .{ .create = true });
             defer allocator.free(installDir);
-            const compilerDir = try std.fs.path.join(allocator, &[_][]const u8 {installDir, versionString});
+            const compilerDir = try std.fs.path.join(allocator, &[_][]const u8{ installDir, versionString });
             defer allocator.free(compilerDir);
             if (std.mem.eql(u8, versionString, "master")) {
                 @panic("set default to master not implemented");
@@ -264,10 +264,10 @@ pub fn main2() !u8 {
 const SetDefault = enum { setDefault, leaveDefault };
 
 fn fetchCompiler(allocator: *Allocator, versionArg: []const u8, setDefault: SetDefault) !void {
-    const installDir = try getInstallDir(allocator, .{.create = true});
+    const installDir = try getInstallDir(allocator, .{ .create = true });
     defer allocator.free(installDir);
 
-    var optionalDownloadIndex : ?DownloadIndex = null;
+    var optionalDownloadIndex: ?DownloadIndex = null;
     // This is causing an LLVM error
     //defer if (optionalDownloadIndex) |_| optionalDownloadIndex.?.deinit(allocator);
     // Also I would rather do this, but it doesn't work because of const issues
@@ -280,27 +280,26 @@ fn fetchCompiler(allocator: *Allocator, versionArg: []const u8, setDefault: SetD
     const isMaster = std.mem.eql(u8, versionArg, "master");
     const versionUrl = blk: {
         if (!isMaster)
-            break :blk VersionUrl { .version = versionArg, .url = try getDefaultUrl(allocator, versionArg) };
+            break :blk VersionUrl{ .version = versionArg, .url = try getDefaultUrl(allocator, versionArg) };
         optionalDownloadIndex = try fetchDownloadIndex(allocator);
         const master = optionalDownloadIndex.?.json.root.Object.get("master").?;
         const compilerVersion = master.Object.get("version").?.String;
         const masterLinux = master.Object.get("x86_64-linux").?;
         const masterLinuxTarball = masterLinux.Object.get("tarball").?.String;
-        break :blk VersionUrl { .version = compilerVersion, .url = masterLinuxTarball };
+        break :blk VersionUrl{ .version = compilerVersion, .url = masterLinuxTarball };
     };
-    const compilerDir = try std.fs.path.join(allocator, &[_][]const u8 {installDir, versionUrl.version});
+    const compilerDir = try std.fs.path.join(allocator, &[_][]const u8{ installDir, versionUrl.version });
     defer allocator.free(compilerDir);
     try installCompiler(allocator, compilerDir, versionUrl.url);
     if (isMaster) {
-        const masterSymlink = try std.fs.path.join(allocator, &[_][]const u8 {installDir, "master"});
+        const masterSymlink = try std.fs.path.join(allocator, &[_][]const u8{ installDir, "master" });
         defer allocator.free(masterSymlink);
-        _ = try loggyUpdateSymlink(versionUrl.version, masterSymlink, .{.is_directory=true});
+        _ = try loggyUpdateSymlink(versionUrl.version, masterSymlink, .{ .is_directory = true });
     }
     if (setDefault == .setDefault) {
         try setDefaultCompiler(allocator, compilerDir);
     }
 }
-
 
 const downloadIndexUrl = "https://ziglang.org/download/index.json";
 
@@ -316,7 +315,7 @@ const DownloadIndex = struct {
 fn fetchDownloadIndex(allocator: *Allocator) !DownloadIndex {
     const text = downloadToString(allocator, downloadIndexUrl) catch |e| switch (e) {
         else => {
-            std.debug.warn("failed to download '{}': {}\n", .{downloadIndexUrl, e});
+            std.debug.warn("failed to download '{}': {}\n", .{ downloadIndexUrl, e });
             return e;
         },
     };
@@ -327,7 +326,7 @@ fn fetchDownloadIndex(allocator: *Allocator) !DownloadIndex {
         break :init try parser.parse(text);
     };
     errdefer json.deinit();
-    return DownloadIndex { .text = text, .json = json };
+    return DownloadIndex{ .text = text, .json = json };
 }
 
 fn loggyMakeDirAbsolute(dirAbsolute: []const u8) !void {
@@ -346,16 +345,15 @@ fn loggyDeleteTreeAbsolute(dirAbsolute: []const u8) !void {
         std.debug.warn("rm -rf '{}'\n", .{dirAbsolute});
     }
     try std.fs.deleteTreeAbsolute(dirAbsolute);
-
 }
 
 pub fn loggyRenameAbsolute(old_path: []const u8, new_path: []const u8) !void {
-    std.debug.warn("mv '{}' '{}'\n", .{old_path, new_path});
+    std.debug.warn("mv '{}' '{}'\n", .{ old_path, new_path });
     try std.fs.renameAbsolute(old_path, new_path);
 }
 
 pub fn loggySymlinkAbsolute(target_path: []const u8, sym_link_path: []const u8, flags: std.fs.SymLinkFlags) !void {
-    std.debug.warn("ln -s '{}' '{}'\n", .{target_path, sym_link_path});
+    std.debug.warn("ln -s '{}' '{}'\n", .{ target_path, sym_link_path });
     // NOTE: can't use symLinkAbsolute because it requires target_path to be absolute but we don't want that
     //       not sure if it is a bug in the standard lib or not
     //try std.fs.symLinkAbsolute(target_path, sym_link_path, flags);
@@ -367,7 +365,7 @@ pub fn loggyUpdateSymlink(target_path: []const u8, sym_link_path: []const u8, fl
     var current_target_path_buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
     if (std.fs.readLinkAbsolute(sym_link_path, &current_target_path_buffer)) |current_target_path| {
         if (std.mem.eql(u8, target_path, current_target_path)) {
-            std.debug.warn("symlink '{}' already points to '{}'\n", .{sym_link_path, target_path});
+            std.debug.warn("symlink '{}' already points to '{}'\n", .{ sym_link_path, target_path });
             return false; // already up-to-date
         }
         try std.os.unlink(sym_link_path);
@@ -398,23 +396,26 @@ fn existsAbsolute(absolutePath: []const u8) !bool {
 }
 
 fn listCompilers(allocator: *Allocator) !void {
-    const installDirString = try getInstallDir(allocator, .{.create = false});
+    const installDirString = try getInstallDir(allocator, .{ .create = false });
     defer allocator.free(installDirString);
 
-    var installDir = std.fs.cwd().openDir(installDirString, .{.iterate=true}) catch |e| switch (e) {
+    var installDir = std.fs.cwd().openDir(installDirString, .{ .iterate = true }) catch |e| switch (e) {
         error.FileNotFound => return,
         else => return e,
     };
     defer installDir.close();
 
     const stdout = std.io.getStdOut().writer();
-    {var it = installDir.iterate(); while (try it.next()) |entry| {
-        if (entry.kind != .Directory)
-            continue;
-        if (std.mem.endsWith(u8, entry.name, ".installing"))
-            continue;
-        try stdout.print("{}\n", .{entry.name});
-    }}
+    {
+        var it = installDir.iterate();
+        while (try it.next()) |entry| {
+            if (entry.kind != .Directory)
+                continue;
+            if (std.mem.endsWith(u8, entry.name, ".installing"))
+                continue;
+            try stdout.print("{}\n", .{entry.name});
+        }
+    }
 }
 
 fn printDefaultCompiler(allocator: *Allocator) !void {
@@ -422,8 +423,7 @@ fn printDefaultCompiler(allocator: *Allocator) !void {
     defer allocator.free(pathLink);
     var targetPathBuffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
     if (std.fs.readLinkAbsolute(pathLink, &targetPathBuffer)) |targetPath| {
-        std.debug.warn("{}", .{
-            std.fs.path.basename(std.fs.path.dirname(std.fs.path.dirname(targetPath).?).?)});
+        std.debug.warn("{}", .{std.fs.path.basename(std.fs.path.dirname(std.fs.path.dirname(targetPath).?).?)});
     } else |e| switch (e) {
         error.FileNotFound => {
             std.debug.warn("<no-default>", .{});
@@ -435,7 +435,7 @@ fn printDefaultCompiler(allocator: *Allocator) !void {
 fn setDefaultCompiler(allocator: *Allocator, compilerDir: []const u8) !void {
     const pathLink = try makeZigPathLinkString(allocator);
     defer allocator.free(pathLink);
-    const linkTarget = try std.fs.path.join(allocator, &[_][]const u8 {compilerDir, "files", "zig"});
+    const linkTarget = try std.fs.path.join(allocator, &[_][]const u8{ compilerDir, "files", "zig" });
     defer allocator.free(linkTarget);
     if (builtin.os.tag == .windows) {
         // TODO: create zig.bat file
@@ -446,8 +446,7 @@ fn setDefaultCompiler(allocator: *Allocator, compilerDir: []const u8) !void {
 }
 
 fn getDefaultUrl(allocator: *Allocator, compilerVersion: []const u8) ![]const u8 {
-    return try std.fmt.allocPrint(allocator, "https://ziglang.org/download/{}/zig-linux-x86_64-{}.tar.xz",
-        .{compilerVersion, compilerVersion});
+    return try std.fmt.allocPrint(allocator, "https://ziglang.org/download/{}/zig-linux-x86_64-{}.tar.xz", .{ compilerVersion, compilerVersion });
 }
 
 fn installCompiler(allocator: *Allocator, compilerDir: []const u8, url: []const u8) !void {
@@ -456,19 +455,19 @@ fn installCompiler(allocator: *Allocator, compilerDir: []const u8, url: []const 
         return;
     }
 
-    const installingDir = try std.mem.concat(allocator, u8, &[_][]const u8 {compilerDir, ".installing"});
+    const installingDir = try std.mem.concat(allocator, u8, &[_][]const u8{ compilerDir, ".installing" });
     defer allocator.free(installingDir);
     try loggyDeleteTreeAbsolute(installingDir);
     try loggyMakeDirAbsolute(installingDir);
 
     const archiveBasename = std.fs.path.basename(url);
-    var archiveRootDir : []const u8 = undefined;
+    var archiveRootDir: []const u8 = undefined;
 
     // download and extract archive
     {
-        const archiveAbsolute = try std.fs.path.join(allocator, &[_][]const u8 {installingDir, archiveBasename});
+        const archiveAbsolute = try std.fs.path.join(allocator, &[_][]const u8{ installingDir, archiveBasename });
         defer allocator.free(archiveAbsolute);
-        std.debug.warn("downloading '{}' to '{}'\n", .{url, archiveAbsolute});
+        std.debug.warn("downloading '{}' to '{}'\n", .{ url, archiveAbsolute });
         downloadToFileAbsolute(allocator, url, archiveAbsolute) catch |e| switch (e) {
             error.HttpNon200StatusCode => {
                 // TODO: more information would be good
@@ -479,8 +478,8 @@ fn installCompiler(allocator: *Allocator, compilerDir: []const u8, url: []const 
         };
 
         if (std.mem.endsWith(u8, archiveBasename, ".tar.xz")) {
-            archiveRootDir = archiveBasename[0.. archiveBasename.len - ".tar.xz".len];
-            _ = try run(allocator, &[_][]const u8 {"tar", "xf", archiveAbsolute, "-C", installingDir});
+            archiveRootDir = archiveBasename[0 .. archiveBasename.len - ".tar.xz".len];
+            _ = try run(allocator, &[_][]const u8{ "tar", "xf", archiveAbsolute, "-C", installingDir });
         } else {
             std.debug.warn("Error: unknown archive extension '{}'\n", .{archiveBasename});
             return error.UnknownArchiveExtension;
@@ -489,20 +488,18 @@ fn installCompiler(allocator: *Allocator, compilerDir: []const u8, url: []const 
     }
 
     {
-        const extractedDir = try std.fs.path.join(allocator, &[_][]const u8 {installingDir, archiveRootDir});
+        const extractedDir = try std.fs.path.join(allocator, &[_][]const u8{ installingDir, archiveRootDir });
         defer allocator.free(extractedDir);
-        const normalizedDir = try std.fs.path.join(allocator, &[_][]const u8 {installingDir, "files"});
+        const normalizedDir = try std.fs.path.join(allocator, &[_][]const u8{ installingDir, "files" });
         defer allocator.free(normalizedDir);
         try loggyRenameAbsolute(extractedDir, normalizedDir);
     }
 
     // TODO: write date information (so users can sort compilers by date)
 
-
     // finish installation by renaming the install dir
     try loggyRenameAbsolute(installingDir, compilerDir);
 }
-
 
 pub fn run(allocator: *std.mem.Allocator, argv: []const []const u8) !std.ChildProcess.Term {
     try logRun(allocator, argv);
@@ -515,7 +512,7 @@ fn logRun(allocator: *std.mem.Allocator, argv: []const []const u8) !void {
     defer allocator.free(buffer);
 
     var prefix = false;
-    var offset : usize = 0;
+    var offset: usize = 0;
     for (argv) |arg| {
         if (prefix) {
             buffer[offset] = ' ';
@@ -523,15 +520,15 @@ fn logRun(allocator: *std.mem.Allocator, argv: []const []const u8) !void {
         } else {
             prefix = true;
         }
-        std.mem.copy(u8, buffer[offset..offset + arg.len], arg);
+        std.mem.copy(u8, buffer[offset .. offset + arg.len], arg);
         offset += arg.len;
     }
     std.debug.assert(offset == buffer.len);
     std.debug.warn("[RUN] {}\n", .{buffer});
 }
 pub fn getCommandStringLength(argv: []const []const u8) usize {
-    var len : usize = 0;
-    var prefixLength : u8 = 0;
+    var len: usize = 0;
+    var prefixLength: u8 = 0;
     for (argv) |arg| {
         len += prefixLength + arg.len;
         prefixLength = 1;
@@ -539,7 +536,7 @@ pub fn getCommandStringLength(argv: []const []const u8) usize {
     return len;
 }
 pub fn appendCommandString(appender: *appendlib.Appender(u8), argv: []const []const u8) void {
-    var prefix : []const u8 = "";
+    var prefix: []const u8 = "";
     for (argv) |arg| {
         appender.appendSlice(prefix);
         appender.appendSlice(arg);
