@@ -190,6 +190,9 @@ pub fn main2() !u8 {
                 if (!std.fs.path.isAbsolute(globalOptionalPathLink.?)) {
                     globalOptionalPathLink = try toAbsolute(allocator, globalOptionalPathLink.?);
                 }
+            } else if (std.mem.eql(u8, "-h", arg) or std.mem.eql(u8, "--help", arg)) {
+                help();
+                return 1;
             } else {
                 args[newlen] = args[i];
                 newlen += 1;

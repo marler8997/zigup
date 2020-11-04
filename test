@@ -7,6 +7,8 @@ mkdir scratch/install scratch/bin
 
 zigup="./zig-cache/bin/zigup --install-dir scratch/install --path-link scratch/bin/zig"
 
+$zigup -h 2>&1 | grep Usage
+$zigup --help 2>&1 | grep Usage
 $zigup $opt || true
 $zigup default
 $zigup fetch-index
