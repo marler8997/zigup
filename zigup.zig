@@ -186,12 +186,14 @@ pub fn main2() !u8 {
                 if (!std.fs.path.isAbsolute(globalOptionalInstallDir.?)) {
                     globalOptionalInstallDir = try toAbsolute(allocator, globalOptionalInstallDir.?);
                 }
-            } else if (std.mem.eql(u8, "--path-link", arg)) {
+            }
+            if (std.mem.eql(u8, "--path-link", arg)) {
                 globalOptionalPathLink = try getCmdOpt(args, &i);
                 if (!std.fs.path.isAbsolute(globalOptionalPathLink.?)) {
                     globalOptionalPathLink = try toAbsolute(allocator, globalOptionalPathLink.?);
                 }
-            } else if (std.mem.eql(u8, "-h", arg) or std.mem.eql(u8, "--help", arg)) {
+            }
+            if (std.mem.eql(u8, "-h", arg) or std.mem.eql(u8, "--help", arg)) {
                 help();
                 return 1;
             } else {
@@ -204,7 +206,8 @@ pub fn main2() !u8 {
     if (args.len == 0) {
         help();
         return 1;
-    } else if (std.mem.eql(u8, "fetch-index", args[0])) {
+    }
+    if (std.mem.eql(u8, "fetch-index", args[0])) {
         if (args.len != 1) {
             std.debug.warn("Error: 'index' command requires 0 arguments but got {}\n", .{args.len - 1});
             return 1;
@@ -213,14 +216,16 @@ pub fn main2() !u8 {
         defer downloadIndex.deinit(allocator);
         try std.io.getStdOut().writeAll(downloadIndex.text);
         return 0;
-    } else if (std.mem.eql(u8, "fetch", args[0])) {
+    }
+    if (std.mem.eql(u8, "fetch", args[0])) {
         if (args.len != 2) {
             std.debug.warn("Error: 'fetch' command requires 1 argument but got {}\n", .{args.len - 1});
             return 1;
         }
         try fetchCompiler(allocator, args[1], .leaveDefault);
         return 0;
-    } else if (std.mem.eql(u8, "clean", args[0])) {
+    }
+    if (std.mem.eql(u8, "clean", args[0])) {
         if (args.len == 2) {
             try cleanCompilers(allocator, args[1]);
         } else {
@@ -228,18 +233,21 @@ pub fn main2() !u8 {
             return 1;
         }
         return 0;
-    } else if (std.mem.eql(u8, "list", args[0])) {
+    }
+    if (std.mem.eql(u8, "list", args[0])) {
         if (args.len != 1) {
             std.debug.warn("Error: 'list' command requires 0 arguments but got {}\n", .{args.len - 1});
             return 1;
         }
         try listCompilers(allocator);
         return 0;
-    } else if (std.mem.eql(u8, "default", args[0])) {
+    }
+    if (std.mem.eql(u8, "default", args[0])) {
         if (args.len == 1) {
             try printDefaultCompiler(allocator);
             return 0;
-        } else if (args.len == 2) {
+        }
+        if (args.len == 2) {
             const versionString = args[1];
             const installDir = try getInstallDir(allocator, .{ .create = true });
             defer allocator.free(installDir);
@@ -250,7 +258,8 @@ pub fn main2() !u8 {
         }
         std.debug.warn("Error: 'default' command requires 1 or 2 arguments but got {}\n", .{args.len - 1});
         return 1;
-    } else if (args.len == 1) {
+    }
+    if (args.len == 1) {
         try fetchCompiler(allocator, args[0], .setDefault);
         return 0;
     } else {
