@@ -221,12 +221,10 @@ pub fn main2() !u8 {
         try fetchCompiler(allocator, args[1], .leaveDefault);
         return 0;
     } else if (std.mem.eql(u8, "clean", args[0])) {
-        if (args.len == 1) {
-            try cleanAllCompilers(allocator);
-        } else if (args.len == 2) {
-            try cleanSingleCompiler(allocator, args[1]);
+        if (args.len == 2) {
+            try cleanCompilers(allocator, args[1]);
         } else {
-            std.debug.warn("Error: 'clean' command requires 0 or 1 arguments but got {}\n", .{args.len - 1});
+            std.debug.warn("Error: 'clean' command requires 1 argument but got {}\n", .{args.len - 1});
             return 1;
         }
         return 0;
@@ -422,40 +420,46 @@ fn listCompilers(allocator: *Allocator) !void {
     }
 }
 
-fn cleanSingleCompiler(allocator: *Allocator, version_name: [:0]u8) !void {
+fn cleanCompilers(allocator: *Allocator, version_name: [:0]u8) !void {
     const install_dir = try getInstallDir(allocator, .{ .create = false });
     defer allocator.free(install_dir);
     const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, version_name });
     defer allocator.free(compiler_dir);
-    // we dont need to read symlink because we know its not master
-    if (!mem.eql(u8, "master", version_name)) {
-        try loggyDeleteTreeAbsolute(compiler_dir);
-    } else {
+    if (mem.eql(u8, "master", version_name)) {
         // its master
         var target_path_buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
         if (std.fs.readLinkAbsolute(compiler_dir, &target_path_buffer)) |master_path| {
             const master_compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, master_path });
+            defer allocator.free(master_compiler_dir);
             try loggyDeleteTreeAbsolute(master_compiler_dir);
+            // also delete the symlink
+            try loggyDeleteTreeAbsolute(master_path);
         } else |e| switch (e) {
             error.FileNotFound => std.debug.warn("master not found\n", .{}),
             else => return e,
         }
-    }
+    } else try loggyDeleteTreeAbsolute(compiler_dir); // we dont need to read symlink because we know its not master
 }
 
-fn cleanAllCompilers(allocator: *Allocator) !void {}
-
-fn printDefaultCompiler(allocator: *Allocator) !void {
+fn getDefaultCompiler(allocator: *Allocator) !?[]const u8 {
     const pathLink = try makeZigPathLinkString(allocator);
     defer allocator.free(pathLink);
     var targetPathBuffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
     if (std.fs.readLinkAbsolute(pathLink, &targetPathBuffer)) |targetPath| {
-        std.debug.warn("{}\n", .{std.fs.path.basename(std.fs.path.dirname(std.fs.path.dirname(targetPath).?).?)});
+        return std.fs.path.basename(std.fs.path.dirname(std.fs.path.dirname(targetPath).?).?);
     } else |e| switch (e) {
         error.FileNotFound => {
-            std.debug.warn("<no-default>\n", .{});
+            return null;
         },
         else => return e,
+    }
+}
+fn printDefaultCompiler(allocator: *Allocator) !void {
+    const default_compiler = try getDefaultCompiler(allocator);
+    if (default_compiler) |default_compiler_unwrapped| {
+        std.debug.warn("{}\n", .{default_compiler_unwrapped});
+    } else {
+        std.debug.warn("<no-default>\n", .{});
     }
 }
 
