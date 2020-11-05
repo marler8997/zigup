@@ -255,7 +255,6 @@ pub fn main2() !u8 {
             } else {
                 try setDefaultCompiler(allocator, compilerDir);
             }
-            try setDefaultCompiler(allocator, compilerDir);
             return 0;
         }
         std.debug.warn("Error: 'default' command requires 1 or 2 arguments but got {}\n", .{args.len - 1});
