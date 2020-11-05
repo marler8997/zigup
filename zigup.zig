@@ -250,6 +250,11 @@ pub fn main2() !u8 {
             defer allocator.free(installDir);
             const compilerDir = try std.fs.path.join(allocator, &[_][]const u8{ installDir, versionString });
             defer allocator.free(compilerDir);
+            if (std.mem.eql(u8, versionString, "master")) {
+                @panic("set default to master not implemented");
+            } else {
+                try setDefaultCompiler(allocator, compilerDir);
+            }
             try setDefaultCompiler(allocator, compilerDir);
             return 0;
         }
