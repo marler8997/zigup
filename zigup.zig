@@ -441,31 +441,27 @@ fn cleanCompilers(allocator: *Allocator) !void {
     while (try it.next()) |entry| {
         if (entry.kind != .Directory)
             continue;
-        if (std.mem.endsWith(u8, entry.name, ".installing"))
-            continue;
-
         if (default_comp_opt) |default_comp| {
             if (mem.eql(u8, default_comp, entry.name)) {
-                std.debug.warn("Not deleting the default compiler: {}\n", .{default_comp});
+                std.debug.warn("keeping '{}' (is default compiler)\n", .{default_comp});
                 continue;
             }
         }
+        const abs_path_to_delete = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, entry.name });
         // if its in the compilers to keep, skip it
 
         {
-            const look_for_keep_path = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, entry.name, "keep" });
+            const look_for_keep_path = try std.fs.path.join(allocator, &[_][]const u8{ abs_path_to_delete, "keep" });
             defer allocator.free(look_for_keep_path);
-            if (std.fs.openFileAbsolute(look_for_keep_path, .{ .read = false })) |keep_file| {
-                keep_file.close();
-                std.debug.warn("Not cleaning '{}' because of keep file.\n", .{entry.name});
+            // TODO stdlib should have acccessAbsolute
+            if (std.fs.cwd().access(look_for_keep_path, .{})) |_| {
+                std.debug.warn("keeping '{}' (has keep file)\n", .{entry.name});
                 continue;
             } else |e| switch (e) {
                 error.FileNotFound => {},
                 else => return e,
             }
         }
-        // if we didn't continue at all then actually delete the compiler
-        const abs_path_to_delete = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, entry.name });
         defer allocator.free(abs_path_to_delete);
         try loggyDeleteTreeAbsolute(abs_path_to_delete);
     }
