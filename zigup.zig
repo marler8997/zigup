@@ -226,12 +226,11 @@ pub fn main2() !u8 {
         return 0;
     }
     if (std.mem.eql(u8, "clean", args[0])) {
-        if (args.len == 2) {
-            try cleanCompilers(allocator, args[1]);
-        } else {
-            std.debug.warn("Error: 'clean' command requires 1 argument but got {}\n", .{args.len - 1});
+        if (args.len != 1) {
+            std.debug.warn("Error: 'clean' command requires 0 arguments but got {}\n", .{args.len - 1});
             return 1;
         }
+        try cleanCompilers(allocator);
         return 0;
     }
     if (std.mem.eql(u8, "list", args[0])) {
@@ -429,25 +428,55 @@ fn listCompilers(allocator: *Allocator) !void {
     }
 }
 
-fn cleanCompilers(allocator: *Allocator, version_name: [:0]u8) !void {
-    const install_dir = try getInstallDir(allocator, .{ .create = false });
-    defer allocator.free(install_dir);
-    const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, version_name });
-    defer allocator.free(compiler_dir);
-    if (mem.eql(u8, "master", version_name)) {
-        // its master
-        var target_path_buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-        if (std.fs.readLinkAbsolute(compiler_dir, &target_path_buffer)) |master_path| {
-            const master_compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, master_path });
-            defer allocator.free(master_compiler_dir);
-            try loggyDeleteTreeAbsolute(master_compiler_dir);
-            // also delete the symlink
-            try loggyDeleteTreeAbsolute(master_path);
-        } else |e| switch (e) {
-            error.FileNotFound => std.debug.warn("master not found\n", .{}),
-            else => return e,
+fn cleanCompilers(allocator: *Allocator) !void {
+    // a hash map that tells what compilers to keep
+    var compilers_to_keep = std.StringHashMap(void).init(allocator);
+    defer compilers_to_keep.deinit();
+    // getting/reading the keep file
+    const install_dir_string = try getInstallDir(allocator, .{ .create = true });
+    defer allocator.free(install_dir_string);
+    const keep_file_path = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, "keep" });
+    defer allocator.free(keep_file_path);
+    var keep_file = std.fs.openFileAbsolute(keep_file_path, .{ .read = true }) catch |e| switch (e) {
+        error.FileNotFound => try std.fs.createFileAbsolute(keep_file_path, .{ .read = true }),
+        else => return e,
+    };
+    defer keep_file.close();
+    var did_alloc = true;
+    const keep_src = try keep_file.readToEndAlloc(allocator, 1024 * 1024);
+    defer allocator.free(keep_src);
+
+    var versions_to_keep_iter = std.mem.split(keep_src, "\n");
+    while (versions_to_keep_iter.next()) |compiler_to_keep| try compilers_to_keep.put(compiler_to_keep, {});
+    const default_comp_opt = try getDefaultCompiler(allocator);
+    defer if (default_comp_opt) |_| allocator.free(default_comp_opt.?);
+    // dont delete the default compiler
+    if (default_comp_opt) |default_comp| {
+        try compilers_to_keep.put(default_comp, {});
+    }
+    // getting the current compilers
+
+    var install_dir = std.fs.cwd().openDir(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
+        error.FileNotFound => return,
+        else => return e,
+    };
+    defer install_dir.close();
+    var abs_path_to_delete: []u8 = undefined;
+    {
+        var it = install_dir.iterate();
+        while (try it.next()) |entry| {
+            if (entry.kind != .Directory)
+                continue;
+            if (std.mem.endsWith(u8, entry.name, ".installing"))
+                continue;
+            // if its in the compilers to keep, skip it
+            if (compilers_to_keep.contains(entry.name))
+                continue;
+            abs_path_to_delete = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, entry.name });
+            defer allocator.free(abs_path_to_delete);
+            try loggyDeleteTreeAbsolute(abs_path_to_delete);
         }
-    } else try loggyDeleteTreeAbsolute(compiler_dir); // we dont need to read symlink because we know its not master
+    }
 }
 
 fn getDefaultCompiler(allocator: *Allocator) !?[]const u8 {
