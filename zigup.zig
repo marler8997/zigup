@@ -429,8 +429,8 @@ fn cleanCompilers(allocator: *Allocator) !void {
     const install_dir_string = try getInstallDir(allocator, .{ .create = true });
     defer allocator.free(install_dir_string);
     // getting the current compiler
-    const default_comp_opt = try getDefaultCompiler(allocator);
-    defer if (default_comp_opt) |_| allocator.free(default_comp_opt.?);
+    var buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const default_comp_opt = try getDefaultCompiler(allocator, &buffer);
 
     var install_dir = std.fs.cwd().openDir(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
         error.FileNotFound => return,
@@ -471,12 +471,10 @@ fn cleanCompilers(allocator: *Allocator) !void {
     }
 }
 
-fn getDefaultCompiler(allocator: *Allocator) !?[]const u8 {
+fn getDefaultCompiler(allocator: *Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8) !?[]const u8 {
     const pathLink = try makeZigPathLinkString(allocator);
     defer allocator.free(pathLink);
-    // var targetPathBuffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-    var targetPathBuffer = try allocator.create([4096]u8);
-    if (std.fs.readLinkAbsolute(pathLink, targetPathBuffer)) |targetPath| {
+    if (std.fs.readLinkAbsolute(pathLink, buffer)) |targetPath| {
         return std.fs.path.basename(std.fs.path.dirname(std.fs.path.dirname(targetPath).?).?);
     } else |e| switch (e) {
         error.FileNotFound => {
@@ -486,8 +484,8 @@ fn getDefaultCompiler(allocator: *Allocator) !?[]const u8 {
     }
 }
 fn printDefaultCompiler(allocator: *Allocator) !void {
-    const default_compiler_opt = try getDefaultCompiler(allocator);
-    defer if (default_compiler_opt) |_| allocator.free(default_compiler_opt.?);
+    var buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const default_compiler_opt = try getDefaultCompiler(allocator, &buffer);
     if (default_compiler_opt) |default_compiler| {
         std.debug.warn("{}\n", .{default_compiler});
     } else {
