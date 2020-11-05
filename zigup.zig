@@ -451,23 +451,22 @@ fn cleanCompilers(allocator: *Allocator) !void {
                 continue;
             }
         }
-        const abs_path_to_delete = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, entry.name });
-        // if its in the compilers to keep, skip it
 
-        {
-            const look_for_keep_path = try std.fs.path.join(allocator, &[_][]const u8{ abs_path_to_delete, "keep" });
-            defer allocator.free(look_for_keep_path);
-            // TODO stdlib should have acccessAbsolute
-            if (std.fs.cwd().access(look_for_keep_path, .{})) |_| {
-                std.debug.warn("keeping '{}' (has keep file)\n", .{entry.name});
-                continue;
-            } else |e| switch (e) {
-                error.FileNotFound => {},
-                else => return e,
-            }
+        var compiler_dir = install_dir.openDir(entry.name, .{}) catch |e| return e; // we know its not FileNotFound
+        defer compiler_dir.close();
+        if (compiler_dir.access("keep", .{})) |_| {
+            std.debug.warn("keeping '{}' (has keep file)\n", .{entry.name});
+            continue;
+        } else |e| switch (e) {
+            error.FileNotFound => {},
+            else => return e,
         }
-        defer allocator.free(abs_path_to_delete);
-        try loggyDeleteTreeAbsolute(abs_path_to_delete);
+        try install_dir.deleteTree(entry.name);
+        if (builtin.os.tag == .windows) {
+            std.debug.warn("rd /s /q \"{}\\{}\"\n", .{ install_dir_string, entry.name });
+        } else {
+            std.debug.warn("rm -rf '{}/{}'\n", .{ install_dir_string, entry.name });
+        }
     }
 }
 
