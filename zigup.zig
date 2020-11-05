@@ -186,14 +186,12 @@ pub fn main2() !u8 {
                 if (!std.fs.path.isAbsolute(globalOptionalInstallDir.?)) {
                     globalOptionalInstallDir = try toAbsolute(allocator, globalOptionalInstallDir.?);
                 }
-            }
-            if (std.mem.eql(u8, "--path-link", arg)) {
+            } else if (std.mem.eql(u8, "--path-link", arg)) {
                 globalOptionalPathLink = try getCmdOpt(args, &i);
                 if (!std.fs.path.isAbsolute(globalOptionalPathLink.?)) {
                     globalOptionalPathLink = try toAbsolute(allocator, globalOptionalPathLink.?);
                 }
-            }
-            if (std.mem.eql(u8, "-h", arg) or std.mem.eql(u8, "--help", arg)) {
+            } else if (std.mem.eql(u8, "-h", arg) or std.mem.eql(u8, "--help", arg)) {
                 help();
                 return 1;
             } else {
@@ -261,12 +259,11 @@ pub fn main2() !u8 {
     if (args.len == 1) {
         try fetchCompiler(allocator, args[0], .setDefault);
         return 0;
-    } else {
-        const command = args[0];
-        args = args[1..];
-        std.debug.warn("command not impl '{}'\n", .{command});
-        return 1;
     }
+    const command = args[0];
+    args = args[1..];
+    std.debug.warn("command not impl '{}'\n", .{command});
+    return 1;
 
     //const optionalInstallPath = try find_zigs(allocator);
 }
@@ -429,61 +426,57 @@ fn listCompilers(allocator: *Allocator) !void {
 }
 
 fn cleanCompilers(allocator: *Allocator) !void {
-    // a hash map that tells what compilers to keep
-    var compilers_to_keep = std.StringHashMap(void).init(allocator);
-    defer compilers_to_keep.deinit();
-    // getting/reading the keep file
     const install_dir_string = try getInstallDir(allocator, .{ .create = true });
     defer allocator.free(install_dir_string);
-    const keep_file_path = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, "keep" });
-    defer allocator.free(keep_file_path);
-    var keep_file = std.fs.openFileAbsolute(keep_file_path, .{ .read = true }) catch |e| switch (e) {
-        error.FileNotFound => try std.fs.createFileAbsolute(keep_file_path, .{ .read = true }),
-        else => return e,
-    };
-    defer keep_file.close();
-    var did_alloc = true;
-    const keep_src = try keep_file.readToEndAlloc(allocator, 1024 * 1024);
-    defer allocator.free(keep_src);
-
-    var versions_to_keep_iter = std.mem.split(keep_src, "\n");
-    while (versions_to_keep_iter.next()) |compiler_to_keep| try compilers_to_keep.put(compiler_to_keep, {});
+    // getting the current compiler
     const default_comp_opt = try getDefaultCompiler(allocator);
     defer if (default_comp_opt) |_| allocator.free(default_comp_opt.?);
-    // dont delete the default compiler
-    if (default_comp_opt) |default_comp| {
-        try compilers_to_keep.put(default_comp, {});
-    }
-    // getting the current compilers
 
     var install_dir = std.fs.cwd().openDir(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
         error.FileNotFound => return,
         else => return e,
     };
     defer install_dir.close();
-    var abs_path_to_delete: []u8 = undefined;
-    {
-        var it = install_dir.iterate();
-        while (try it.next()) |entry| {
-            if (entry.kind != .Directory)
+    var it = install_dir.iterate();
+    while (try it.next()) |entry| {
+        if (entry.kind != .Directory)
+            continue;
+        if (std.mem.endsWith(u8, entry.name, ".installing"))
+            continue;
+
+        if (default_comp_opt) |default_comp| {
+            if (mem.eql(u8, default_comp, entry.name)) {
+                std.debug.warn("Not deleting the default compiler: {}\n", .{default_comp});
                 continue;
-            if (std.mem.endsWith(u8, entry.name, ".installing"))
-                continue;
-            // if its in the compilers to keep, skip it
-            if (compilers_to_keep.contains(entry.name))
-                continue;
-            abs_path_to_delete = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, entry.name });
-            defer allocator.free(abs_path_to_delete);
-            try loggyDeleteTreeAbsolute(abs_path_to_delete);
+            }
         }
+        // if its in the compilers to keep, skip it
+
+        {
+            const look_for_keep_path = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, entry.name, "keep" });
+            defer allocator.free(look_for_keep_path);
+            if (std.fs.openFileAbsolute(look_for_keep_path, .{ .read = false })) |keep_file| {
+                keep_file.close();
+                std.debug.warn("Not cleaning '{}' because of keep file.\n", .{entry.name});
+                continue;
+            } else |e| switch (e) {
+                error.FileNotFound => {},
+                else => return e,
+            }
+        }
+        // if we didn't continue at all then actually delete the compiler
+        const abs_path_to_delete = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, entry.name });
+        defer allocator.free(abs_path_to_delete);
+        try loggyDeleteTreeAbsolute(abs_path_to_delete);
     }
 }
 
 fn getDefaultCompiler(allocator: *Allocator) !?[]const u8 {
     const pathLink = try makeZigPathLinkString(allocator);
     defer allocator.free(pathLink);
-    var targetPathBuffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-    if (std.fs.readLinkAbsolute(pathLink, &targetPathBuffer)) |targetPath| {
+    // var targetPathBuffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var targetPathBuffer = try allocator.create([4096]u8);
+    if (std.fs.readLinkAbsolute(pathLink, targetPathBuffer)) |targetPath| {
         return std.fs.path.basename(std.fs.path.dirname(std.fs.path.dirname(targetPath).?).?);
     } else |e| switch (e) {
         error.FileNotFound => {
@@ -493,9 +486,10 @@ fn getDefaultCompiler(allocator: *Allocator) !?[]const u8 {
     }
 }
 fn printDefaultCompiler(allocator: *Allocator) !void {
-    const default_compiler = try getDefaultCompiler(allocator);
-    if (default_compiler) |default_compiler_unwrapped| {
-        std.debug.warn("{}\n", .{default_compiler_unwrapped});
+    const default_compiler_opt = try getDefaultCompiler(allocator);
+    defer if (default_compiler_opt) |_| allocator.free(default_compiler_opt.?);
+    if (default_compiler_opt) |default_compiler| {
+        std.debug.warn("{}\n", .{default_compiler});
     } else {
         std.debug.warn("<no-default>\n", .{});
     }

@@ -17,5 +17,10 @@ $zigup fetch 0.5.0
 $zigup master
 $zigup list
 $zigup default 0.5.0
-#$zigup default master
+$zigup default master
+touch scratch/install/0.5.0/keep
+touch scratch/install/master/keep
+$zigup clean # should do nothing because we keep master and 0.5.0
+rm scratch/install/0.5.0/keep
+$zigup clean # deletes 0.5.0
 $zigup master
