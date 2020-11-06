@@ -71,13 +71,17 @@ fn downloadToString(allocator: *Allocator, url: []const u8) ![]u8 {
 
 fn ignoreHttpCallback(request: []const u8) void {}
 
-fn allocInstallDirString(allocator: *Allocator) ![]const u8 {
-    // TODO: maybe support ZIG_INSTALL_DIR environment variable?
-    // TODO: maybe support a file on the filesystem to configure install dir?
-    const home = std.os.getenv("HOME") orelse {
+fn getHomeDir() ![]const u8 {
+    return std.os.getenv("HOME") orelse {
         std.debug.warn("Error: cannot find install directory, $HOME environment variable is not set\n", .{});
         return error.MissingHomeEnvironmentVariable;
     };
+}
+
+fn allocInstallDirString(allocator: *Allocator) ![]const u8 {
+    // TODO: maybe support ZIG_INSTALL_DIR environment variable?
+    // TODO: maybe support a file on the filesystem to configure install dir?
+    const home = try getHomeDir();
     if (!std.fs.path.isAbsolute(home)) {
         std.debug.warn("Error: $HOME environment variable '{}' is not an absolute path\n", .{home});
         return error.BadHomeEnvironmentVariable;
@@ -111,10 +115,7 @@ fn makeZigPathLinkString(allocator: *Allocator) ![]const u8 {
     if (globalOptionalPathLink) |path| return path;
 
     // for now we're just going to hardcode the path to $HOME/bin/zig
-    const home = std.os.getenv("HOME") orelse {
-        std.debug.warn("Error: cannot find install directory, $HOME environment variable is not set\n", .{});
-        return error.MissingHomeEnvironmentVariable;
-    };
+    const home = try getHomeDir();
     return try std.fs.path.join(allocator, &[_][]const u8{ home, "bin", "zig" });
 }
 
@@ -222,6 +223,14 @@ pub fn main2() !u8 {
         try fetchCompiler(allocator, args[1], .leaveDefault);
         return 0;
     }
+    if (std.mem.eql(u8, "clean", args[0])) {
+        if (args.len != 1) {
+            std.debug.warn("Error: 'clean' command requires 0 arguments but got {}\n", .{args.len - 1});
+            return 1;
+        }
+        try cleanCompilers(allocator);
+        return 0;
+    }
     if (std.mem.eql(u8, "list", args[0])) {
         if (args.len != 1) {
             std.debug.warn("Error: 'list' command requires 0 arguments but got {}\n", .{args.len - 1});
@@ -251,7 +260,6 @@ pub fn main2() !u8 {
         std.debug.warn("Error: 'default' command requires 1 or 2 arguments but got {}\n", .{args.len - 1});
         return 1;
     }
-
     if (args.len == 1) {
         try fetchCompiler(allocator, args[0], .setDefault);
         return 0;
@@ -421,17 +429,97 @@ fn listCompilers(allocator: *Allocator) !void {
     }
 }
 
-fn printDefaultCompiler(allocator: *Allocator) !void {
+fn cleanCompilers(allocator: *Allocator) !void {
+    const install_dir_string = try getInstallDir(allocator, .{ .create = true });
+    defer allocator.free(install_dir_string);
+    // getting the current compiler
+    const default_comp_opt = try getDefaultCompiler(allocator);
+    defer if (default_comp_opt) |default_compiler| allocator.free(default_compiler);
+
+    // TODO openDirAbsolute in stdlib
+    var install_dir = std.fs.cwd().openDir(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
+        error.FileNotFound => return,
+        else => return e,
+    };
+    defer install_dir.close();
+    const master_points_to_opt = try getMasterDir(allocator, &install_dir);
+    defer if (master_points_to_opt) |master_points_to| allocator.free(master_points_to);
+    var it = install_dir.iterate();
+    while (try it.next()) |entry| {
+        if (entry.kind != .Directory)
+            continue;
+        if (default_comp_opt) |default_comp| {
+            if (mem.eql(u8, default_comp, entry.name)) {
+                std.debug.warn("keeping '{}' (is default compiler)\n", .{default_comp});
+                continue;
+            }
+        }
+        if (master_points_to_opt) |master_points_to| {
+            if (mem.eql(u8, master_points_to, entry.name)) {
+                std.debug.warn("keeping '{}' (because it is master)\n", .{master_points_to});
+                continue;
+            }
+        }
+
+        var compiler_dir = try install_dir.openDir(entry.name, .{});
+        defer compiler_dir.close();
+        if (compiler_dir.access("keep", .{})) |_| {
+            std.debug.warn("keeping '{}' (has keep file)\n", .{entry.name});
+            continue;
+        } else |e| switch (e) {
+            error.FileNotFound => {},
+            else => return e,
+        }
+        try install_dir.deleteTree(entry.name);
+        std.debug.warn("deleting '{}{}{}'\n", .{ install_dir_string, std.fs.path.sep, entry.name });
+    }
+}
+
+fn readDefaultCompiler(allocator: *Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8) !?[]const u8 {
     const pathLink = try makeZigPathLinkString(allocator);
     defer allocator.free(pathLink);
-    var targetPathBuffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-    if (std.fs.readLinkAbsolute(pathLink, &targetPathBuffer)) |targetPath| {
-        std.debug.warn("{}", .{std.fs.path.basename(std.fs.path.dirname(std.fs.path.dirname(targetPath).?).?)});
+    if (std.fs.readLinkAbsolute(pathLink, buffer)) |targetPath| {
+        return std.fs.path.basename(std.fs.path.dirname(std.fs.path.dirname(targetPath).?).?);
     } else |e| switch (e) {
         error.FileNotFound => {
-            std.debug.warn("<no-default>", .{});
+            return null;
         },
         else => return e,
+    }
+}
+
+fn readMasterDir(allocator: *Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8, install_dir: *std.fs.Dir) !?[]const u8 {
+    return install_dir.readLink("master", buffer) catch |e| switch (e) {
+        error.FileNotFound => {
+            return null;
+        },
+        else => return e,
+    };
+}
+
+fn getDefaultCompiler(allocator: *Allocator) !?[]const u8 {
+    var buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const slice_path = (try readDefaultCompiler(allocator, &buffer)) orelse return null;
+    var path_to_return = try allocator.alloc(u8, slice_path.len);
+    std.mem.copy(u8, path_to_return, slice_path);
+    return path_to_return;
+}
+
+fn getMasterDir(allocator: *Allocator, install_dir: *std.fs.Dir) !?[]const u8 {
+    var buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const slice_path = (try readMasterDir(allocator, &buffer, install_dir)) orelse return null;
+    var path_to_return = try allocator.alloc(u8, slice_path.len);
+    std.mem.copy(u8, path_to_return, slice_path);
+    return path_to_return;
+}
+
+fn printDefaultCompiler(allocator: *Allocator) !void {
+    const default_compiler_opt = try getDefaultCompiler(allocator);
+    defer if (default_compiler_opt) |default_compiler| allocator.free(default_compiler);
+    if (default_compiler_opt) |default_compiler| {
+        std.debug.warn("{}\n", .{default_compiler});
+    } else {
+        std.debug.warn("<no-default>\n", .{});
     }
 }
 
@@ -475,6 +563,8 @@ fn installCompiler(allocator: *Allocator, compilerDir: []const u8, url: []const 
             error.HttpNon200StatusCode => {
                 // TODO: more information would be good
                 std.debug.warn("HTTP request failed (TODO: improve ziget library to get better error)\n", .{});
+                // this removes the installing dir if the http request fails so we dont have random directories
+                try loggyDeleteTreeAbsolute(installingDir);
                 return error.AlreadyReported;
             },
             else => return e,
