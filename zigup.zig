@@ -481,8 +481,11 @@ fn readDefaultCompiler(allocator: *Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8
 }
 
 fn getDefaultCompiler(allocator: *Allocator) !?[]const u8 {
-    var buffer = try allocator.create([std.fs.MAX_PATH_BYTES]u8);
-    return try readDefaultCompiler(allocator, buffer);
+    var buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const slice_path = (try readDefaultCompiler(allocator, &buffer)) orelse return null;
+    var path_to_return = try allocator.alloc(u8, slice_path.len);
+    std.mem.copy(u8, path_to_return, slice_path);
+    return path_to_return;
 }
 
 fn printDefaultCompiler(allocator: *Allocator) !void {
