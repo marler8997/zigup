@@ -433,9 +433,10 @@ fn cleanCompilers(allocator: *Allocator) !void {
     const install_dir_string = try getInstallDir(allocator, .{ .create = true });
     defer allocator.free(install_dir_string);
     // getting the current compiler
-    var buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-    const default_comp_opt = try getDefaultCompiler(allocator, &buffer);
+    const default_comp_opt = try getDefaultCompiler(allocator);
+    defer if (default_comp_opt) |default_compiler| allocator.free(default_compiler);
 
+    // TODO openDirAbsolute in stdlib
     var install_dir = std.fs.cwd().openDir(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
         error.FileNotFound => return,
         else => return e,
@@ -452,7 +453,7 @@ fn cleanCompilers(allocator: *Allocator) !void {
             }
         }
 
-        var compiler_dir = install_dir.openDir(entry.name, .{}) catch |e| return e; // we know its not FileNotFound
+        var compiler_dir = try install_dir.openDir(entry.name, .{});
         defer compiler_dir.close();
         if (compiler_dir.access("keep", .{})) |_| {
             std.debug.warn("keeping '{}' (has keep file)\n", .{entry.name});
@@ -462,15 +463,11 @@ fn cleanCompilers(allocator: *Allocator) !void {
             else => return e,
         }
         try install_dir.deleteTree(entry.name);
-        if (builtin.os.tag == .windows) {
-            std.debug.warn("rd /s /q \"{}\\{}\"\n", .{ install_dir_string, entry.name });
-        } else {
-            std.debug.warn("rm -rf '{}/{}'\n", .{ install_dir_string, entry.name });
-        }
+        std.debug.warn("deleting '{}{}{}'\n", .{ install_dir_string, std.fs.path.sep, entry.name });
     }
 }
 
-fn getDefaultCompiler(allocator: *Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8) !?[]const u8 {
+fn readDefaultCompiler(allocator: *Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8) !?[]const u8 {
     const pathLink = try makeZigPathLinkString(allocator);
     defer allocator.free(pathLink);
     if (std.fs.readLinkAbsolute(pathLink, buffer)) |targetPath| {
@@ -482,9 +479,15 @@ fn getDefaultCompiler(allocator: *Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8)
         else => return e,
     }
 }
+
+fn getDefaultCompiler(allocator: *Allocator) !?[]const u8 {
+    var buffer = try allocator.create([std.fs.MAX_PATH_BYTES]u8);
+    return try readDefaultCompiler(allocator, buffer);
+}
+
 fn printDefaultCompiler(allocator: *Allocator) !void {
-    var buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-    const default_compiler_opt = try getDefaultCompiler(allocator, &buffer);
+    const default_compiler_opt = try getDefaultCompiler(allocator);
+    defer if (default_compiler_opt) |default_compiler| allocator.free(default_compiler);
     if (default_compiler_opt) |default_compiler| {
         std.debug.warn("{}\n", .{default_compiler});
     } else {
