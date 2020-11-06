@@ -442,6 +442,8 @@ fn cleanCompilers(allocator: *Allocator) !void {
         else => return e,
     };
     defer install_dir.close();
+    var master_point_to_buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const master_points_to_opt = install_dir.readLink("master", &master_point_to_buffer) catch null;
     var it = install_dir.iterate();
     while (try it.next()) |entry| {
         if (entry.kind != .Directory)
@@ -449,6 +451,12 @@ fn cleanCompilers(allocator: *Allocator) !void {
         if (default_comp_opt) |default_comp| {
             if (mem.eql(u8, default_comp, entry.name)) {
                 std.debug.warn("keeping '{}' (is default compiler)\n", .{default_comp});
+                continue;
+            }
+        }
+        if (master_points_to_opt) |master_points_to| {
+            if (mem.eql(u8, master_points_to, entry.name)) {
+                std.debug.warn("keeping '{}' (because it is master)\n", .{master_points_to});
                 continue;
             }
         }
