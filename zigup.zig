@@ -442,8 +442,8 @@ fn cleanCompilers(allocator: *Allocator) !void {
         else => return e,
     };
     defer install_dir.close();
-    var master_point_to_buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-    const master_points_to_opt = install_dir.readLink("master", &master_point_to_buffer) catch null;
+    const master_points_to_opt = try getMasterDir(allocator, &install_dir);
+    defer if (master_points_to_opt) |master_points_to| allocator.free(master_points_to);
     var it = install_dir.iterate();
     while (try it.next()) |entry| {
         if (entry.kind != .Directory)
@@ -488,9 +488,26 @@ fn readDefaultCompiler(allocator: *Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8
     }
 }
 
+fn readMasterDir(allocator: *Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8, install_dir: *std.fs.Dir) !?[]const u8 {
+    return install_dir.readLink("master", buffer) catch |e| switch (e) {
+        error.FileNotFound => {
+            return null;
+        },
+        else => return e,
+    };
+}
+
 fn getDefaultCompiler(allocator: *Allocator) !?[]const u8 {
     var buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
     const slice_path = (try readDefaultCompiler(allocator, &buffer)) orelse return null;
+    var path_to_return = try allocator.alloc(u8, slice_path.len);
+    std.mem.copy(u8, path_to_return, slice_path);
+    return path_to_return;
+}
+
+fn getMasterDir(allocator: *Allocator, install_dir: *std.fs.Dir) !?[]const u8 {
+    var buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const slice_path = (try readMasterDir(allocator, &buffer, install_dir)) orelse return null;
     var path_to_return = try allocator.alloc(u8, slice_path.len);
     std.mem.copy(u8, path_to_return, slice_path);
     return path_to_return;
