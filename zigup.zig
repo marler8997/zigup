@@ -239,7 +239,7 @@ pub fn main2() !u8 {
             std.debug.warn("Error: 'keep' command requires 1 argument but got {}\n", .{args.len - 1});
             return 1;
         }
-        try keepCompiler(allocator, args[1]);
+        try keepOrUnkeepCompiler(allocator, args[1], .keep);
         return 0;
     }
     if (std.mem.eql(u8, "unkeep", args[0])) {
@@ -247,7 +247,7 @@ pub fn main2() !u8 {
             std.debug.warn("Error: 'unkeep' command requires 1 argument but got {}\n", .{args.len - 1});
             return 1;
         }
-        try unkeepCompiler(allocator, args[1]);
+        try keepOrUnkeepCompiler(allocator, args[1], .unkeep);
         return 0;
     }
     if (std.mem.eql(u8, "list", args[0])) {
@@ -448,8 +448,8 @@ fn listCompilers(allocator: *Allocator) !void {
     }
 }
 
-fn keepCompiler(allocator: *Allocator, compiler_name_to_keep: []const u8) !void {
-    if (mem.eql(u8, "master", compiler_name_to_keep)) {
+fn keepOrUnkeepCompiler(allocator: *Allocator, compiler_name_to_keep_or_unkeep: []const u8, keep_or_unkeep: enum { keep, unkeep }) !void {
+    if (mem.eql(u8, "master", compiler_name_to_keep_or_unkeep)) {
         std.debug.warn("master is always kept, doing nothing\n", .{});
         return;
     }
@@ -463,49 +463,29 @@ fn keepCompiler(allocator: *Allocator, compiler_name_to_keep: []const u8) !void 
     };
     defer install_dir.close();
 
-    var compiler_dir = install_dir.openDir(compiler_name_to_keep, .{}) catch |e| switch (e) {
+    var compiler_dir = install_dir.openDir(compiler_name_to_keep_or_unkeep, .{}) catch |e| switch (e) {
         error.FileNotFound => {
-            std.debug.warn("compiler not found: {}\n", .{compiler_name_to_keep});
+            std.debug.warn("compiler not found: {}\n", .{compiler_name_to_keep_or_unkeep});
             return;
         },
         else => return e,
     };
-    var keep_fd = try compiler_dir.createFile("keep", .{});
-    keep_fd.close();
-    std.debug.warn("created '{}{c}{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, compiler_name_to_keep, std.fs.path.sep, "keep" });
-}
-
-fn unkeepCompiler(allocator: *Allocator, compiler_name_to_unkeep: []const u8) !void {
-    if (mem.eql(u8, "master", compiler_name_to_unkeep)) {
-        std.debug.warn("master is always kept, doing nothing\n", .{});
-        return;
+    if (keep_or_unkeep == .keep) {
+        var keep_fd = try compiler_dir.createFile("keep", .{});
+        keep_fd.close();
+        std.debug.warn("created '{}{c}{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, compiler_name_to_keep_or_unkeep, std.fs.path.sep, "keep" });
+    } else {
+        compiler_dir.deleteFile("keep") catch |e| switch (e) {
+            error.FileNotFound => {
+                std.debug.warn("compiler '{}' does not have keep file, so it can't be unkept\n", .{compiler_name_to_keep_or_unkeep});
+                return;
+            },
+            else => return e,
+        };
+        std.debug.warn("deleted '{}{c}{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, compiler_name_to_keep_or_unkeep, std.fs.path.sep, "keep" });
     }
-    const install_dir_string = try getInstallDir(allocator, .{ .create = true });
-    defer allocator.free(install_dir_string);
-
-    // TODO openDirAbsolute in stdlib
-    var install_dir = std.fs.cwd().openDir(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
-        error.FileNotFound => return,
-        else => return e,
-    };
-    defer install_dir.close();
-
-    var compiler_dir = install_dir.openDir(compiler_name_to_unkeep, .{}) catch |e| switch (e) {
-        error.FileNotFound => {
-            std.debug.warn("compiler not found: '{}'\n", .{compiler_name_to_unkeep});
-            return;
-        },
-        else => return e,
-    };
-    var keep_fd = compiler_dir.deleteFile("keep") catch |e| switch (e) {
-        error.FileNotFound => {
-            std.debug.warn("compiler '{}' does not have keep file, so it cant be unkept\n", .{compiler_name_to_unkeep});
-            return;
-        },
-        else => return e,
-    };
-    std.debug.warn("deleted '{}{c}{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, compiler_name_to_unkeep, std.fs.path.sep, "keep" });
 }
+
 fn cleanCompilers(allocator: *Allocator) !void {
     const install_dir_string = try getInstallDir(allocator, .{ .create = true });
     defer allocator.free(install_dir_string);
