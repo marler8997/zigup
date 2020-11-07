@@ -547,8 +547,8 @@ fn cleanCompilers(allocator: *Allocator) !void {
             error.FileNotFound => {},
             else => return e,
         }
-        try install_dir.deleteTree(entry.name);
         std.debug.warn("deleting '{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, entry.name });
+        try install_dir.deleteTree(entry.name);
     }
 }
 
