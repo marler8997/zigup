@@ -137,7 +137,7 @@ fn help() void {
         \\  zigup fetch VERSION           download VERSION compiler
         \\  zigup default [VERSION]       get or set the default compiler
         \\  zigup clean                   clean the installed compilers that are not marked as keep or master
-        \\  zigup keep VERSION            tell zigup to not delete VERSION when cleaning
+        \\  zigup keep VERSION            mark a compiler to be kept during clean
         \\  zigup unkeep VERSION          tell zigup to delete VERSION when cleaning
         \\
         \\Uncommon Usage:
@@ -227,11 +227,14 @@ pub fn main2() !u8 {
         return 0;
     }
     if (std.mem.eql(u8, "clean", args[0])) {
-        if (args.len != 1) {
-            std.debug.warn("Error: 'clean' command requires 0 arguments but got {}\n", .{args.len - 1});
+        if (args.len > 2) {
+            std.debug.warn("Error: 'clean' command requires 0 or 1 arguments but got {}\n", .{args.len - 1});
             return 1;
         }
-        try cleanCompilers(allocator);
+        if (args.len == 1)
+            try cleanCompilers(allocator);
+        if (args.len == 2)
+            try cleanSpecificCompiler(allocator, args[1]);
         return 0;
     }
     if (std.mem.eql(u8, "keep", args[0])) {
@@ -239,15 +242,7 @@ pub fn main2() !u8 {
             std.debug.warn("Error: 'keep' command requires 1 argument but got {}\n", .{args.len - 1});
             return 1;
         }
-        try keepOrUnkeepCompiler(allocator, args[1], .keep);
-        return 0;
-    }
-    if (std.mem.eql(u8, "unkeep", args[0])) {
-        if (args.len != 2) {
-            std.debug.warn("Error: 'unkeep' command requires 1 argument but got {}\n", .{args.len - 1});
-            return 1;
-        }
-        try keepOrUnkeepCompiler(allocator, args[1], .unkeep);
+        try keepCompiler(allocator, args[1]);
         return 0;
     }
     if (std.mem.eql(u8, "list", args[0])) {
@@ -448,13 +443,31 @@ fn listCompilers(allocator: *Allocator) !void {
     }
 }
 
-fn keepOrUnkeepCompiler(allocator: *Allocator, compiler_name_to_keep_or_unkeep: []const u8, keep_or_unkeep: enum { keep, unkeep }) !void {
-    if (mem.eql(u8, "master", compiler_name_to_keep_or_unkeep)) {
-        std.debug.warn("master is always kept, doing nothing\n", .{});
-        return;
-    }
+fn keepCompiler(allocator: *Allocator, compiler_version: []const u8) !void {
     const install_dir_string = try getInstallDir(allocator, .{ .create = true });
     defer allocator.free(install_dir_string);
+
+    // TODO openDirAbsolute in stdlib
+    var install_dir = try std.fs.cwd().openDir(install_dir_string, .{ .iterate = true });
+    defer install_dir.close();
+
+    var compiler_dir = install_dir.openDir(compiler_version, .{}) catch |e| switch (e) {
+        error.FileNotFound => {
+            std.debug.warn("Error: compiler not found: {}\n", .{compiler_version});
+            return;
+        },
+        else => return e,
+    };
+    var keep_fd = try compiler_dir.createFile("keep", .{});
+    keep_fd.close();
+    std.debug.warn("created '{}{c}{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, compiler_version, std.fs.path.sep, "keep" });
+}
+fn cleanSpecificCompiler(allocator: *Allocator, name: []const u8) !void {
+    const install_dir_string = try getInstallDir(allocator, .{ .create = true });
+    defer allocator.free(install_dir_string);
+    // getting the current compiler
+    const default_comp_opt = try getDefaultCompiler(allocator);
+    defer if (default_comp_opt) |default_compiler| allocator.free(default_compiler);
 
     // TODO openDirAbsolute in stdlib
     var install_dir = std.fs.cwd().openDir(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
@@ -462,28 +475,23 @@ fn keepOrUnkeepCompiler(allocator: *Allocator, compiler_name_to_keep_or_unkeep: 
         else => return e,
     };
     defer install_dir.close();
-
-    var compiler_dir = install_dir.openDir(compiler_name_to_keep_or_unkeep, .{}) catch |e| switch (e) {
-        error.FileNotFound => {
-            std.debug.warn("compiler not found: {}\n", .{compiler_name_to_keep_or_unkeep});
+    const master_points_to_opt = try getMasterDir(allocator, &install_dir);
+    defer if (master_points_to_opt) |master_points_to| allocator.free(master_points_to);
+    if (default_comp_opt) |default_comp| {
+        if (mem.eql(u8, default_comp, name)) {
+            std.debug.warn("Error: not deleting '{}' (is default compiler)\n", .{default_comp});
             return;
-        },
-        else => return e,
-    };
-    if (keep_or_unkeep == .keep) {
-        var keep_fd = try compiler_dir.createFile("keep", .{});
-        keep_fd.close();
-        std.debug.warn("created '{}{c}{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, compiler_name_to_keep_or_unkeep, std.fs.path.sep, "keep" });
-    } else {
-        compiler_dir.deleteFile("keep") catch |e| switch (e) {
-            error.FileNotFound => {
-                std.debug.warn("compiler '{}' does not have keep file, so it can't be unkept\n", .{compiler_name_to_keep_or_unkeep});
-                return;
-            },
-            else => return e,
-        };
-        std.debug.warn("deleted '{}{c}{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, compiler_name_to_keep_or_unkeep, std.fs.path.sep, "keep" });
+        }
     }
+    if (master_points_to_opt) |master_points_to| {
+        if (mem.eql(u8, master_points_to, name) or mem.eql(u8, "master", name)) { // they could also enter in master.
+            std.debug.warn("Error: not deleting '{}' (because it is master)\n", .{master_points_to});
+            return;
+        }
+    }
+
+    std.debug.warn("deleting '{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, name });
+    try install_dir.deleteTree(name);
 }
 
 fn cleanCompilers(allocator: *Allocator) !void {
