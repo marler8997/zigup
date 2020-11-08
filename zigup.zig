@@ -230,10 +230,11 @@ pub fn main2() !u8 {
             std.debug.warn("Error: 'clean' command requires 0 or 1 arguments but got {}\n", .{args.len - 1});
             return 1;
         }
-        if (args.len == 1)
-            try cleanCompilers(allocator);
-        if (args.len == 2)
-            try cleanSpecificCompiler(allocator, args[1]);
+        if (args.len == 1) {
+            try cleanCompilers(allocator, null);
+        } else if (args.len == 2) {
+            try cleanCompilers(allocator, args[1]);
+        }
         return 0;
     }
     if (std.mem.eql(u8, "keep", args[0])) {
@@ -461,7 +462,8 @@ fn keepCompiler(allocator: *Allocator, compiler_version: []const u8) !void {
     keep_fd.close();
     std.debug.warn("created '{}{c}{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, compiler_version, std.fs.path.sep, "keep" });
 }
-fn cleanSpecificCompiler(allocator: *Allocator, name: []const u8) !void {
+
+fn cleanCompilers(allocator: *Allocator, compiler_name_opt: ?[]const u8) !void {
     const install_dir_string = try getInstallDir(allocator, .{ .create = true });
     defer allocator.free(install_dir_string);
     // getting the current compiler
@@ -476,69 +478,53 @@ fn cleanSpecificCompiler(allocator: *Allocator, name: []const u8) !void {
     defer install_dir.close();
     const master_points_to_opt = try getMasterDir(allocator, &install_dir);
     defer if (master_points_to_opt) |master_points_to| allocator.free(master_points_to);
-    if (default_comp_opt) |default_comp| {
-        if (mem.eql(u8, default_comp, name)) {
-            std.debug.warn("Error: not deleting '{}' (is default compiler)\n", .{default_comp});
-            return;
-        }
-    }
-    if (master_points_to_opt) |master_points_to| {
-        if (mem.eql(u8, master_points_to, name) or mem.eql(u8, "master", name)) { // they could also enter in master.
-            std.debug.warn("Error: not deleting '{}' (because it is master)\n", .{master_points_to});
-            return;
-        }
-    }
-
-    std.debug.warn("deleting '{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, name });
-    try install_dir.deleteTree(name);
-}
-
-fn cleanCompilers(allocator: *Allocator) !void {
-    const install_dir_string = try getInstallDir(allocator, .{ .create = true });
-    defer allocator.free(install_dir_string);
-    // getting the current compiler
-    const default_comp_opt = try getDefaultCompiler(allocator);
-    defer if (default_comp_opt) |default_compiler| allocator.free(default_compiler);
-
-    // TODO openDirAbsolute in stdlib
-    var install_dir = std.fs.cwd().openDir(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
-        error.FileNotFound => return,
-        else => return e,
-    };
-    defer install_dir.close();
-    const master_points_to_opt = try getMasterDir(allocator, &install_dir);
-    defer if (master_points_to_opt) |master_points_to| allocator.free(master_points_to);
-    var it = install_dir.iterate();
-    while (try it.next()) |entry| {
-        if (entry.kind != .Directory)
-            continue;
+    if (compiler_name_opt) |compiler_name| {
         if (default_comp_opt) |default_comp| {
-            if (mem.eql(u8, default_comp, entry.name)) {
-                std.debug.warn("keeping '{}' (is default compiler)\n", .{default_comp});
-                continue;
+            if (mem.eql(u8, default_comp, name)) {
+                std.debug.warn("Error: not deleting '{}' (is default compiler)\n", .{default_comp});
+                return;
             }
         }
         if (master_points_to_opt) |master_points_to| {
-            if (mem.eql(u8, master_points_to, entry.name)) {
-                std.debug.warn("keeping '{}' (because it is master)\n", .{master_points_to});
-                continue;
+            if (mem.eql(u8, master_points_to, name) or mem.eql(u8, "master", name)) { // they could also enter in master.
+                std.debug.warn("Error: not deleting '{}' (because it is master)\n", .{master_points_to});
+                return;
             }
         }
+        std.debug.warn("deleting '{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, name });
+        try install_dir.deleteTree(name);
+    } else {
+        var it = install_dir.iterate();
+        while (try it.next()) |entry| {
+            if (entry.kind != .Directory)
+                continue;
+            if (default_comp_opt) |default_comp| {
+                if (mem.eql(u8, default_comp, entry.name)) {
+                    std.debug.warn("keeping '{}' (is default compiler)\n", .{default_comp});
+                    continue;
+                }
+            }
+            if (master_points_to_opt) |master_points_to| {
+                if (mem.eql(u8, master_points_to, entry.name)) {
+                    std.debug.warn("keeping '{}' (because it is master)\n", .{master_points_to});
+                    continue;
+                }
+            }
 
-        var compiler_dir = try install_dir.openDir(entry.name, .{});
-        defer compiler_dir.close();
-        if (compiler_dir.access("keep", .{})) |_| {
-            std.debug.warn("keeping '{}' (has keep file)\n", .{entry.name});
-            continue;
-        } else |e| switch (e) {
-            error.FileNotFound => {},
-            else => return e,
+            var compiler_dir = try install_dir.openDir(entry.name, .{});
+            defer compiler_dir.close();
+            if (compiler_dir.access("keep", .{})) |_| {
+                std.debug.warn("keeping '{}' (has keep file)\n", .{entry.name});
+                continue;
+            } else |e| switch (e) {
+                error.FileNotFound => {},
+                else => return e,
+            }
+            std.debug.warn("deleting '{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, entry.name });
+            try install_dir.deleteTree(entry.name);
         }
-        std.debug.warn("deleting '{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, entry.name });
-        try install_dir.deleteTree(entry.name);
     }
 }
-
 fn readDefaultCompiler(allocator: *Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8) !?[]const u8 {
     const path_link = try makeZigPathLinkString(allocator);
     defer allocator.free(path_link);
