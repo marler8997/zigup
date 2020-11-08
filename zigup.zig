@@ -136,9 +136,8 @@ fn help() void {
         \\  zigup VERSION                 download and set VERSION compiler as default
         \\  zigup fetch VERSION           download VERSION compiler
         \\  zigup default [VERSION]       get or set the default compiler
-        \\  zigup clean                   clean the installed compilers that are not marked as keep or master
+        \\  zigup clean   [VERSION]       clean the installed compilers that are not marked as keep or master. if a version is specified, it will clean that version
         \\  zigup keep VERSION            mark a compiler to be kept during clean
-        \\  zigup unkeep VERSION          tell zigup to delete VERSION when cleaning
         \\
         \\Uncommon Usage:
         \\
