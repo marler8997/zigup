@@ -22,6 +22,15 @@ zigup default <version>
 
 # list the installed compiler versions
 zigup list
+
+# clean the compilers not marked to keep and not master
+zigup clean
+
+# mark a compiler to keep
+zigup keep <version>
+
+# un-mark a compiler version to keep
+zigup unkeep <version>
 ```
 
 # Configuration
@@ -49,12 +58,11 @@ My breakdown of the operations I'd like.
 * set/get the default compiler (sets the link/script in PATH) (`zigup default` and `zigup default <version>`)
 * set/clear the "keep" flag on a compiler.  Each keep flag can also have a note explaining why it's being kept.
 * clean (cleans compilers without the "keep" flag and aren't the default)
+* keep a compiler (in conjunction with clean)
 * set/remove compiler in current environment. Probably require creating a bash/batch script that the user could source for each installed compiler.
 * setup the environment for a specific version of the compiler?
 
 * download zig index file (`zigup fetch-index`)
-
-I think to manage compilers, users can mark them as "keep".  The tool will "keep" all compilers marked as "keep" and also the default compiler. I could probably just create an empty file called "keep" to make that mark.
 
 > NOTE: by default `zigup list` should display more information, like release date, its "keep" value, etc.  Maybe it should also sort them, probably by release date?
 
