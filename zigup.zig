@@ -136,6 +136,9 @@ fn help() void {
         \\  zigup VERSION                 download and set VERSION compiler as default
         \\  zigup fetch VERSION           download VERSION compiler
         \\  zigup default [VERSION]       get or set the default compiler
+        \\  zigup clean   [VERSION]       deletes the given compiler version, otherwise, cleans all compilers
+        \\                                that aren't the default, master, or marked to keep.
+        \\  zigup keep VERSION            mark a compiler to be kept during clean
         \\
         \\Uncommon Usage:
         \\
@@ -224,11 +227,22 @@ pub fn main2() !u8 {
         return 0;
     }
     if (std.mem.eql(u8, "clean", args[0])) {
-        if (args.len != 1) {
-            std.debug.warn("Error: 'clean' command requires 0 arguments but got {}\n", .{args.len - 1});
+        if (args.len == 1) {
+            try cleanCompilers(allocator, null);
+        } else if (args.len == 2) {
+            try cleanCompilers(allocator, args[1]);
+        } else {
+            std.debug.warn("Error: 'clean' command requires 0 or 1 arguments but got {}\n", .{args.len - 1});
             return 1;
         }
-        try cleanCompilers(allocator);
+        return 0;
+    }
+    if (std.mem.eql(u8, "keep", args[0])) {
+        if (args.len != 2) {
+            std.debug.warn("Error: 'keep' command requires 1 argument but got {}\n", .{args.len - 1});
+            return 1;
+        }
+        try keepCompiler(allocator, args[1]);
         return 0;
     }
     if (std.mem.eql(u8, "list", args[0])) {
@@ -429,7 +443,27 @@ fn listCompilers(allocator: *Allocator) !void {
     }
 }
 
-fn cleanCompilers(allocator: *Allocator) !void {
+fn keepCompiler(allocator: *Allocator, compiler_version: []const u8) !void {
+    const install_dir_string = try getInstallDir(allocator, .{ .create = true });
+    defer allocator.free(install_dir_string);
+
+    // TODO openDirAbsolute in stdlib
+    var install_dir = try std.fs.cwd().openDir(install_dir_string, .{ .iterate = true });
+    defer install_dir.close();
+
+    var compiler_dir = install_dir.openDir(compiler_version, .{}) catch |e| switch (e) {
+        error.FileNotFound => {
+            std.debug.warn("Error: compiler not found: {}\n", .{compiler_version});
+            return error.AlreadyReported;
+        },
+        else => return e,
+    };
+    var keep_fd = try compiler_dir.createFile("keep", .{});
+    keep_fd.close();
+    std.debug.warn("created '{}{c}{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, compiler_version, std.fs.path.sep, "keep" });
+}
+
+fn cleanCompilers(allocator: *Allocator, compiler_name_opt: ?[]const u8) !void {
     const install_dir_string = try getInstallDir(allocator, .{ .create = true });
     defer allocator.free(install_dir_string);
     // getting the current compiler
@@ -444,37 +478,37 @@ fn cleanCompilers(allocator: *Allocator) !void {
     defer install_dir.close();
     const master_points_to_opt = try getMasterDir(allocator, &install_dir);
     defer if (master_points_to_opt) |master_points_to| allocator.free(master_points_to);
-    var it = install_dir.iterate();
-    while (try it.next()) |entry| {
-        if (entry.kind != .Directory)
-            continue;
-        if (default_comp_opt) |default_comp| {
-            if (mem.eql(u8, default_comp, entry.name)) {
-                std.debug.warn("keeping '{}' (is default compiler)\n", .{default_comp});
+    if (compiler_name_opt) |compiler_name| {
+        if (getKeepReason(master_points_to_opt, default_comp_opt, compiler_name)) |reason| {
+            std.debug.warn("Error: cannot clean '{}' ({})\n", .{ compiler_name, reason });
+            return error.AlreadyReported;
+        }
+        std.debug.warn("deleting '{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, compiler_name });
+        try install_dir.deleteTree(compiler_name);
+    } else {
+        var it = install_dir.iterate();
+        while (try it.next()) |entry| {
+            if (entry.kind != .Directory)
+                continue;
+            if (getKeepReason(master_points_to_opt, default_comp_opt, entry.name)) |reason| {
+                std.debug.warn("keeping '{}' ({})\n", .{ entry.name, reason });
                 continue;
             }
-        }
-        if (master_points_to_opt) |master_points_to| {
-            if (mem.eql(u8, master_points_to, entry.name)) {
-                std.debug.warn("keeping '{}' (because it is master)\n", .{master_points_to});
-                continue;
-            }
-        }
 
-        var compiler_dir = try install_dir.openDir(entry.name, .{});
-        defer compiler_dir.close();
-        if (compiler_dir.access("keep", .{})) |_| {
-            std.debug.warn("keeping '{}' (has keep file)\n", .{entry.name});
-            continue;
-        } else |e| switch (e) {
-            error.FileNotFound => {},
-            else => return e,
+            var compiler_dir = try install_dir.openDir(entry.name, .{});
+            defer compiler_dir.close();
+            if (compiler_dir.access("keep", .{})) |_| {
+                std.debug.warn("keeping '{}' (has keep file)\n", .{entry.name});
+                continue;
+            } else |e| switch (e) {
+                error.FileNotFound => {},
+                else => return e,
+            }
+            std.debug.warn("deleting '{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, entry.name });
+            try install_dir.deleteTree(entry.name);
         }
-        std.debug.warn("deleting '{}{}{}'\n", .{ install_dir_string, std.fs.path.sep, entry.name });
-        try install_dir.deleteTree(entry.name);
     }
 }
-
 fn readDefaultCompiler(allocator: *Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8) !?[]const u8 {
     const path_link = try makeZigPathLinkString(allocator);
     defer allocator.free(path_link);
@@ -635,4 +669,18 @@ pub fn appendCommandString(appender: *appendlib.Appender(u8), argv: []const []co
         appender.appendSlice(arg);
         prefix = " ";
     }
+}
+
+pub fn getKeepReason(master_points_to_opt: ?[]const u8, default_compiler_opt: ?[]const u8, name: []const u8) ?[]const u8 {
+    if (default_compiler_opt) |default_comp| {
+        if (mem.eql(u8, default_comp, name)) {
+            return "is default compiler";
+        }
+    }
+    if (master_points_to_opt) |master_points_to| {
+        if (mem.eql(u8, master_points_to, name)) {
+            return "it is master";
+        }
+    }
+    return null;
 }
