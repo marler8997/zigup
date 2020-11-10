@@ -226,14 +226,13 @@ pub fn main2() !u8 {
         return 0;
     }
     if (std.mem.eql(u8, "clean", args[0])) {
-        if (args.len > 2) {
-            std.debug.warn("Error: 'clean' command requires 0 or 1 arguments but got {}\n", .{args.len - 1});
-            return 1;
-        }
         if (args.len == 1) {
             try cleanCompilers(allocator, null);
         } else if (args.len == 2) {
             try cleanCompilers(allocator, args[1]);
+        } else {
+            std.debug.warn("Error: 'clean' command requires 0 or 1 arguments but got {}\n", .{args.len - 1});
+            return 1;
         }
         return 0;
     }
@@ -479,36 +478,34 @@ fn cleanCompilers(allocator: *Allocator, compiler_name_opt: ?[]const u8) !void {
     const master_points_to_opt = try getMasterDir(allocator, &install_dir);
     defer if (master_points_to_opt) |master_points_to| allocator.free(master_points_to);
     if (compiler_name_opt) |compiler_name| {
-        if (default_comp_opt) |default_comp| {
-            if (mem.eql(u8, default_comp, name)) {
-                std.debug.warn("Error: not deleting '{}' (is default compiler)\n", .{default_comp});
+        switch (shouldDeleteCompiler(master_points_to_opt, default_comp_opt, compiler_name)) {
+            .yes => {},
+            .no_is_default => {
+                std.debug.warn("Error: not deleting '{}' (is default compiler)\n", .{compiler_name});
                 return;
-            }
-        }
-        if (master_points_to_opt) |master_points_to| {
-            if (mem.eql(u8, master_points_to, name) or mem.eql(u8, "master", name)) { // they could also enter in master.
-                std.debug.warn("Error: not deleting '{}' (because it is master)\n", .{master_points_to});
+            },
+            .no_is_master => {
+                std.debug.warn("Error: not deleting '{}' (because it is master)\n", .{compiler_name});
                 return;
-            }
+            },
         }
-        std.debug.warn("deleting '{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, name });
-        try install_dir.deleteTree(name);
+        std.debug.warn("deleting '{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, compiler_name });
+        try install_dir.deleteTree(compiler_name);
     } else {
         var it = install_dir.iterate();
         while (try it.next()) |entry| {
             if (entry.kind != .Directory)
                 continue;
-            if (default_comp_opt) |default_comp| {
-                if (mem.eql(u8, default_comp, entry.name)) {
-                    std.debug.warn("keeping '{}' (is default compiler)\n", .{default_comp});
+            switch (shouldDeleteCompiler(master_points_to_opt, default_comp_opt, entry.name)) {
+                .yes => {},
+                .no_is_default => {
+                    std.debug.warn("keeping '{}' (is default commpiler)\n", .{entry.name});
                     continue;
-                }
-            }
-            if (master_points_to_opt) |master_points_to| {
-                if (mem.eql(u8, master_points_to, entry.name)) {
-                    std.debug.warn("keeping '{}' (because it is master)\n", .{master_points_to});
+                },
+                .no_is_master => {
+                    std.debug.warn("keeping '{}' (because it is master)\n", .{entry.name});
                     continue;
-                }
+                },
             }
 
             var compiler_dir = try install_dir.openDir(entry.name, .{});
@@ -685,4 +682,17 @@ pub fn appendCommandString(appender: *appendlib.Appender(u8), argv: []const []co
         appender.appendSlice(arg);
         prefix = " ";
     }
+}
+pub fn shouldDeleteCompiler(master_points_to_opt: ?[]const u8, default_compiler_opt: ?[]const u8, name: []const u8) enum { yes, no_is_default, no_is_master } {
+    if (default_compiler_opt) |default_comp| {
+        if (mem.eql(u8, default_comp, name)) {
+            return .no_is_default;
+        }
+    }
+    if (master_points_to_opt) |master_points_to| {
+        if (mem.eql(u8, master_points_to, name)) {
+            return .no_is_master;
+        }
+    }
+    return .yes;
 }
