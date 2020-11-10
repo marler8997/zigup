@@ -453,7 +453,7 @@ fn keepCompiler(allocator: *Allocator, compiler_version: []const u8) !void {
     var compiler_dir = install_dir.openDir(compiler_version, .{}) catch |e| switch (e) {
         error.FileNotFound => {
             std.debug.warn("Error: compiler not found: {}\n", .{compiler_version});
-            return;
+            return error.AlreadyReported;
         },
         else => return e,
     };
@@ -478,16 +478,9 @@ fn cleanCompilers(allocator: *Allocator, compiler_name_opt: ?[]const u8) !void {
     const master_points_to_opt = try getMasterDir(allocator, &install_dir);
     defer if (master_points_to_opt) |master_points_to| allocator.free(master_points_to);
     if (compiler_name_opt) |compiler_name| {
-        switch (shouldDeleteCompiler(master_points_to_opt, default_comp_opt, compiler_name)) {
-            .yes => {},
-            .no_is_default => {
-                std.debug.warn("Error: not deleting '{}' (is default compiler)\n", .{compiler_name});
-                return;
-            },
-            .no_is_master => {
-                std.debug.warn("Error: not deleting '{}' (because it is master)\n", .{compiler_name});
-                return;
-            },
+        if (getKeepReason(master_points_to_opt, default_comp_opt, compiler_name)) |reason| {
+            std.debug.warn("Error: cannot clean '{}' ({})\n", .{ compiler_name, reason });
+            return error.AlreadyReported;
         }
         std.debug.warn("deleting '{}{c}{}'\n", .{ install_dir_string, std.fs.path.sep, compiler_name });
         try install_dir.deleteTree(compiler_name);
@@ -496,16 +489,9 @@ fn cleanCompilers(allocator: *Allocator, compiler_name_opt: ?[]const u8) !void {
         while (try it.next()) |entry| {
             if (entry.kind != .Directory)
                 continue;
-            switch (shouldDeleteCompiler(master_points_to_opt, default_comp_opt, entry.name)) {
-                .yes => {},
-                .no_is_default => {
-                    std.debug.warn("keeping '{}' (is default commpiler)\n", .{entry.name});
-                    continue;
-                },
-                .no_is_master => {
-                    std.debug.warn("keeping '{}' (because it is master)\n", .{entry.name});
-                    continue;
-                },
+            if (getKeepReason(master_points_to_opt, default_comp_opt, entry.name)) |reason| {
+                std.debug.warn("keeping '{}' ({})\n", .{ entry.name, reason });
+                continue;
             }
 
             var compiler_dir = try install_dir.openDir(entry.name, .{});
@@ -683,16 +669,17 @@ pub fn appendCommandString(appender: *appendlib.Appender(u8), argv: []const []co
         prefix = " ";
     }
 }
-pub fn shouldDeleteCompiler(master_points_to_opt: ?[]const u8, default_compiler_opt: ?[]const u8, name: []const u8) enum { yes, no_is_default, no_is_master } {
+
+pub fn getKeepReason(master_points_to_opt: ?[]const u8, default_compiler_opt: ?[]const u8, name: []const u8) ?[]const u8 {
     if (default_compiler_opt) |default_comp| {
         if (mem.eql(u8, default_comp, name)) {
-            return .no_is_default;
+            return "is default compiler";
         }
     }
     if (master_points_to_opt) |master_points_to| {
         if (mem.eql(u8, master_points_to, name)) {
-            return .no_is_master;
+            return "it is master";
         }
     }
-    return .yes;
+    return null;
 }

@@ -31,7 +31,7 @@ $zigup clean # doesn't delete anything because we have keepfile and master doens
 testCompilerCount 3
 
 $zigup clean 0.6.0
-$zigup clean 2>&1 | grep "because it is master" # DOESN't delete master because we dont delete master, but DOES delete 0.6.0
+$zigup clean 2>&1 | grep "it is master" # DOESN't delete master because we dont delete master, but DOES delete 0.6.0
 testCompilerCount 2
 
 $zigup master
