@@ -447,8 +447,7 @@ fn keepCompiler(allocator: *Allocator, compiler_version: []const u8) !void {
     const install_dir_string = try getInstallDir(allocator, .{ .create = true });
     defer allocator.free(install_dir_string);
 
-    // TODO openDirAbsolute in stdlib
-    var install_dir = try std.fs.cwd().openDir(install_dir_string, .{ .iterate = true });
+    var install_dir = try std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true });
     defer install_dir.close();
 
     var compiler_dir = install_dir.openDir(compiler_version, .{}) catch |e| switch (e) {
