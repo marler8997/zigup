@@ -469,8 +469,7 @@ fn cleanCompilers(allocator: *Allocator, compiler_name_opt: ?[]const u8) !void {
     const default_comp_opt = try getDefaultCompiler(allocator);
     defer if (default_comp_opt) |default_compiler| allocator.free(default_compiler);
 
-    // TODO openDirAbsolute in stdlib
-    var install_dir = std.fs.cwd().openDir(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
+    var install_dir = std.fs.cwd().openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
         error.FileNotFound => return,
         else => return e,
     };
