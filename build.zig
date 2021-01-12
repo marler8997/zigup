@@ -4,9 +4,9 @@ const Pkg = std.build.Pkg;
 
 fn checkPackage(indexFile: []const u8, url: []const u8, ) void {
     std.fs.cwd().access(indexFile, std.fs.File.OpenFlags { .read = true }) catch |err| {
-        std.debug.warn("Error: library index file '{}' does not exist\n", .{indexFile});
-        std.debug.warn("       Run the following to clone it:\n", .{});
-        std.debug.warn("       git clone {} {}\n", .{url, std.fs.path.dirname(indexFile)});
+        std.debug.print("Error: library index file '{s}' does not exist\n", .{indexFile});
+        std.debug.print("       Run the following to clone it:\n", .{});
+        std.debug.print("       git clone {s} {s}\n", .{url, std.fs.path.dirname(indexFile)});
         std.os.exit(1);
     };
 }
