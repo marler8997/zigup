@@ -340,7 +340,7 @@ const DownloadIndex = struct {
 fn fetchDownloadIndex(allocator: *Allocator) !DownloadIndex {
     const text = downloadToString(allocator, download_index_url) catch |e| switch (e) {
         else => {
-            std.debug.print("failed to download '{s}': {s}\n", .{ download_index_url, e });
+            std.debug.print("failed to download '{s}': {}\n", .{ download_index_url, e });
             return e;
         },
     };
