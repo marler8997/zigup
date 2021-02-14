@@ -2,43 +2,25 @@ const std = @import("std");
 const Builder = std.build.Builder;
 const Pkg = std.build.Pkg;
 
-fn checkPackage(indexFile: []const u8, url: []const u8, ) void {
-    std.fs.cwd().access(indexFile, std.fs.File.OpenFlags { .read = true }) catch |err| {
-        std.debug.print("Error: library index file '{s}' does not exist\n", .{indexFile});
-        std.debug.print("       Run the following to clone it:\n", .{});
-        std.debug.print("       git clone {s} {s}\n", .{url, std.fs.path.dirname(indexFile)});
-        std.os.exit(1);
-    };
-}
-
 fn unwrapOptionalBool(optionalBool: ?bool) bool {
     if (optionalBool) |b| return b;
     return false;
 }
 
-pub fn build(b: *Builder) void {
-    const zigetRepo = "../ziget";
-    const iguanaRepo = "../iguanaTLS";
+pub fn build(b: *Builder) !void {
+    const ssl_backend: enum { openssl, iguana } = init: {
+        const openssl = unwrapOptionalBool(b.option(bool, "openssl", "enable OpenSSL backend"));
+        const iguana = unwrapOptionalBool(b.option(bool, "iguana", "enable IguanaTLS backend"));
+        if (openssl and iguana) {
+            std.log.err("both '-Dopenssl' and '-Diguana' cannot be enabled at the same time", .{});
+            std.os.exit(1);
+        }
+        if (openssl) break :init .openssl;
+        if (iguana) break :init .iguana;
 
-    //
-    // TODO: figure out how to use ziget's build.zig file
-    //
-    const zigetIndexFile = zigetRepo ++ "/ziget.zig";
-    const openSslIndexFile = zigetRepo ++ "/openssl/ssl.zig";
-    const iguanaSslIndexFile = zigetRepo ++ "/iguana/ssl.zig";
-    const iguanaIndexFile = iguanaRepo ++ "/src/main.zig";
-    const openssl = unwrapOptionalBool(b.option(bool, "openssl", "enable OpenSSL ssl backend"));
-    const iguana = unwrapOptionalBool(b.option(bool, "iguana", "enable IguanaTLS ssl backend")) or !openssl;
-    if (openssl and iguana) {
-        std.log.err("both '-Dopenssl' and '-Diguana' cannot be enabled at the same time", .{});
+        std.log.err("please enable an ssl backend with either '-Dopenssl' or '-Diguana'", .{});
         std.os.exit(1);
-    }
-    const sslIndexFile = if (iguana) iguanaSslIndexFile else openSslIndexFile;
-    //const sslIndexFile = zigetRepo ++ "/nossl/ssl.zig";
-    if (iguana)
-        checkPackage(zigetIndexFile, "https://github.com/marler8997/ziget")
-    else
-        checkPackage(iguanaIndexFile, "https://github.com/alexnask/iguanaTLS");
+    };
 
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
@@ -50,27 +32,42 @@ pub fn build(b: *Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
 
-    const sslPkg = if (iguana) blk: {
-        const iguanaPkg = Pkg { .name= "iguana", .path = iguanaIndexFile };
-        break :blk Pkg { .name = "ssl", .path = sslIndexFile, .dependencies = &.{ iguanaPkg } };
-    } else  Pkg { .name = "ssl", .path = sslIndexFile};
-    
-    const zigetPkg = Pkg {
-        .name = "ziget",
-        .path = zigetIndexFile,
-        .dependencies = &[_]Pkg {sslPkg},
-    };
-
     const exe = b.addExecutable("zigup", "zigup.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
-    exe.addPackage(zigetPkg);
 
-    // these libraries are required for openssl
-    exe.linkSystemLibrary("c");
-    exe.linkSystemLibrary("ssl");
-    exe.linkSystemLibrary("crypto");
-
+    //
+    // TODO: figure out how to use ziget's build.zig file
+    //
+    const ziget_repo = try getGitRepo(b.allocator, "https://github.com/marler8997/ziget");
+    const ssl_pkg = init: { switch (ssl_backend) {
+        .openssl => {
+            // these libraries are required for openssl
+            exe.linkSystemLibrary("c");
+            exe.linkSystemLibrary("ssl");
+            exe.linkSystemLibrary("crypto");
+            break :init Pkg {
+                .name = "ssl",
+                .path = try join(b, &[_][]const u8 {ziget_repo, "openssl", "ssl.zig"}),
+            };
+        },
+        .iguana => {
+            const iguana_repo = try getGitRepo(b.allocator, "https://github.com/alexnask/iguanaTLS");
+            const iguana_index_file = try join(b, &[_][]const u8 {iguana_repo, "src", "main.zig"});
+            break :init Pkg {
+                .name = "ssl",
+                .path = try join(b, &[_][]const u8 {ziget_repo, "iguana", "ssl.zig"}),
+                .dependencies = &[_]Pkg {
+                    .{ .name = "iguana", .path = iguana_index_file },
+                },
+            };
+        }
+    }};
+    exe.addPackage(.{
+        .name = "ziget",
+        .path = try join(b, &[_][]const u8 {ziget_repo, "ziget.zig"}),
+        .dependencies = &[_]Pkg { ssl_pkg },
+    });
     exe.install();
 
     const run_cmd = exe.run();
@@ -80,3 +77,25 @@ pub fn build(b: *Builder) void {
     run_step.dependOn(&run_cmd.step);
 }
 
+fn join(b: *Builder, parts: []const []const u8) ![]const u8 {
+    return try std.fs.path.join(b.allocator, parts);
+}
+
+fn getGitRepo(allocator: *std.mem.Allocator, url: []const u8) ![]const u8 {
+    const repo_path = init: {
+        const cwd = try std.process.getCwdAlloc(allocator);
+        defer allocator.free(cwd);
+        break :init try std.fs.path.join(allocator,
+            &[_][]const u8{ std.fs.path.dirname(cwd).?, std.fs.path.basename(url) }
+        );
+    };
+    errdefer allocator.free(repo_path);
+
+    std.fs.accessAbsolute(repo_path, std.fs.File.OpenFlags { .read = true }) catch |err| {
+        std.debug.print("Error: repository '{s}' does not exist\n", .{repo_path});
+        std.debug.print("       Run the following to clone it:\n", .{});
+        std.debug.print("       git clone {s} {s}\n", .{url, repo_path});
+        std.os.exit(1);
+    };
+    return repo_path;
+}
