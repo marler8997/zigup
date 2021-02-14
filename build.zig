@@ -11,16 +11,34 @@ fn checkPackage(indexFile: []const u8, url: []const u8, ) void {
     };
 }
 
+fn unwrapOptionalBool(optionalBool: ?bool) bool {
+    if (optionalBool) |b| return b;
+    return false;
+}
+
 pub fn build(b: *Builder) void {
     const zigetRepo = "../ziget";
+    const iguanaRepo = "../iguanaTLS";
 
     //
     // TODO: figure out how to use ziget's build.zig file
     //
     const zigetIndexFile = zigetRepo ++ "/ziget.zig";
-    const sslIndexFile = zigetRepo ++ "/openssl/ssl.zig";
+    const openSslIndexFile = zigetRepo ++ "/openssl/ssl.zig";
+    const iguanaSslIndexFile = zigetRepo ++ "/iguana/ssl.zig";
+    const iguanaIndexFile = iguanaRepo ++ "/src/main.zig";
+    const openssl = unwrapOptionalBool(b.option(bool, "openssl", "enable OpenSSL ssl backend"));
+    const iguana = unwrapOptionalBool(b.option(bool, "iguana", "enable IguanaTLS ssl backend")) or !openssl;
+    if (openssl and iguana) {
+        std.log.err("both '-Dopenssl' and '-Diguana' cannot be enabled at the same time", .{});
+        std.os.exit(1);
+    }
+    const sslIndexFile = if (iguana) iguanaSslIndexFile else openSslIndexFile;
     //const sslIndexFile = zigetRepo ++ "/nossl/ssl.zig";
-    checkPackage(zigetIndexFile, "https://github.com/marler8997/ziget");
+    if (iguana)
+        checkPackage(zigetIndexFile, "https://github.com/marler8997/ziget")
+    else
+        checkPackage(iguanaIndexFile, "https://github.com/alexnask/iguanaTLS");
 
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
@@ -32,7 +50,11 @@ pub fn build(b: *Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
 
-    const sslPkg   = Pkg { .name = "ssl", .path = sslIndexFile };
+    const sslPkg = if (iguana) blk: {
+        const iguanaPkg = Pkg { .name= "iguana", .path = iguanaIndexFile };
+        break :blk Pkg { .name = "ssl", .path = sslIndexFile, .dependencies = &.{ iguanaPkg } };
+    } else  Pkg { .name = "ssl", .path = sslIndexFile};
+    
     const zigetPkg = Pkg {
         .name = "ziget",
         .path = zigetIndexFile,
