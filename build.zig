@@ -13,7 +13,11 @@ fn unwrapOptionalBool(optionalBool: ?bool) bool {
 }
 
 pub fn build(b: *Builder) !void {
-    const ziget_repo = try getGitRepo(b.allocator, "https://github.com/marler8997/ziget");
+    const ziget_repo = try (GitRepo {
+        .url = "https://github.com/marler8997/ziget",
+        .branch = null,
+        .sha = "26918aedf7aa55d8b3c11c133d75151df928096e",
+    }).resolve(b.allocator);
 
     // TODO: implement this if/when we get @tryImport
     //if (zigetbuild) |_| { } else {
@@ -97,21 +101,50 @@ fn join(b: *Builder, parts: []const []const u8) ![]const u8 {
     return try std.fs.path.join(b.allocator, parts);
 }
 
-pub fn getGitRepo(allocator: *std.mem.Allocator, url: []const u8) ![]const u8 {
-    const repo_path = init: {
+pub const GitRepo = struct {
+    url: []const u8,
+    branch: ?[]const u8,
+    sha: []const u8,
+    path: ?[]const u8 = null,
+
+    pub fn defaultReposDir(allocator: *std.mem.Allocator) ![]const u8 {
         const cwd = try std.process.getCwdAlloc(allocator);
         defer allocator.free(cwd);
-        break :init try std.fs.path.join(allocator,
-            &[_][]const u8{ std.fs.path.dirname(cwd).?, std.fs.path.basename(url) }
-        );
-    };
-    errdefer allocator.free(repo_path);
+        return try std.fs.path.join(allocator, &[_][]const u8 { cwd, "dep" });
+    }
 
-    std.fs.accessAbsolute(repo_path, std.fs.File.OpenFlags { .read = true }) catch |err| {
-        std.debug.print("Error: repository '{s}' does not exist\n", .{repo_path});
-        std.debug.print("       Run the following to clone it:\n", .{});
-        std.debug.print("       git clone {s} {s}\n", .{url, repo_path});
-        std.os.exit(1);
-    };
-    return repo_path;
-}
+    pub fn resolve(self: GitRepo, allocator: *std.mem.Allocator) ![]const u8 {
+        var optional_repos_dir_to_clean: ?[]const u8 = null;
+        defer {
+            if (optional_repos_dir_to_clean) |p| {
+                allocator.free(p);
+            }
+        }
+
+        const path = if (self.path) |p| try allocator.dupe(u8, p) else blk: {
+            const repos_dir = try defaultReposDir(allocator);
+            optional_repos_dir_to_clean = repos_dir;
+            break :blk try std.fs.path.join(allocator, &[_][]const u8{ repos_dir, std.fs.path.basename(self.url) });
+        };
+        errdefer self.allocator.free(path);
+
+        std.fs.accessAbsolute(path, std.fs.File.OpenFlags { .read = true }) catch |err| {
+            std.debug.print("Error: repository '{s}' does not exist\n", .{path});
+            std.debug.print("       Run the following to clone it:\n", .{});
+            const branch_args = if (self.branch) |b| &[2][]const u8 {" -b ", b} else &[2][]const u8 {"", ""};
+            std.debug.print("       git clone {s}{s}{s} {s} && git -C {3s} checkout {s} -b for_zigup\n",
+                .{self.url, branch_args[0], branch_args[1], path, self.sha});
+            std.os.exit(1);
+        };
+
+        // TODO: check if the SHA matches an print a message and/or warning if it is different
+
+        return path;
+    }
+
+    pub fn resolveOneFile(self: GitRepo, allocator: *std.mem.Allocator, index_sub_path: []const u8) ![]const u8 {
+        const repo_path = try self.resolve(allocator);
+        defer allocator.free(repo_path);
+        return try std.fs.path.join(allocator, &[_][]const u8 { repo_path, index_sub_path });
+    }
+};
