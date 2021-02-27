@@ -1,0 +1,20 @@
+#!/usr/bin/env sh
+# this is a temporary script that copies the build files from the ziget repo
+# this can be removed once some form of Dynamic build.zig dependencies is implemented
+#
+#    see https://github.com/ziglang/zig/issues/8070
+#
+set -ex
+
+if [ ! -e dep/ziget ]; then
+    echo "Error: please clone the ziget repo first, run 'zig build' to see how"
+    exit 1
+fi
+
+rm -rf ziget-build-files-copy
+
+for f in build.zig openssl/sources; do
+    dir=$(dirname $f)
+    mkdir -p ziget-build-files-copy/$dir
+    cp dep/ziget/$f ziget-build-files-copy/$dir
+done

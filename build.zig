@@ -2,7 +2,7 @@ const std = @import("std");
 const Builder = std.build.Builder;
 const Pkg = std.build.Pkg;
 
-const zigetbuild = @import("zigetbuild.zig");
+const zigetbuild = @import("ziget-build-files-copy/build.zig");
 // TODO: use this if/when we get @tryImport
 //const SslBackend = if (zigetbuild) zigetbuild.SslBackend else enum {};
 const SslBackend = zigetbuild.SslBackend;
@@ -16,7 +16,7 @@ pub fn build(b: *Builder) !void {
     const ziget_repo = try (GitRepo {
         .url = "https://github.com/marler8997/ziget",
         .branch = null,
-        .sha = "26918aedf7aa55d8b3c11c133d75151df928096e",
+        .sha = "2b25f39471760e12709ca80daf59c72e5f51a4dd",
     }).resolve(b.allocator);
 
     // TODO: implement this if/when we get @tryImport
@@ -26,7 +26,9 @@ pub fn build(b: *Builder) !void {
     //}
 
     var github_release_step = b.step("github-release", "Build the github-release binaries");
-    try addGithubReleaseExe(b, github_release_step, ziget_repo, "x86_64-linux", SslBackend.iguana);
+    // TODO: need to implement some interesting logic to make this work without
+    //       having the iguana repo copied into this one
+    //try addGithubReleaseExe(b, github_release_step, ziget_repo, "x86_64-linux", SslBackend.iguana);
 
     const ssl_backend = zigetbuild.getSslBackend(b);
     const target = b.standardTargetOptions(.{});
@@ -48,17 +50,49 @@ fn addZigupExe(b: *Builder, ziget_repo: []const u8, target: std.zig.CrossTarget,
     const exe = b.addExecutable("zigup", "zigup.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
+
+    const ziget_ssl_pkg = blk: {
+        if (ssl_backend) |backend| {
+            break :blk zigetbuild.addSslBackend(exe, backend, ziget_repo) catch |err| {
+                const ssl_backend_failed = b.allocator.create(SslBackendFailedStep) catch unreachable;
+                ssl_backend_failed.* = SslBackendFailedStep.init(b, "the zigup exe", backend);
+                break :blk Pkg {
+                    .name = "missing-ssl-backend-files",
+                    .path = "missing-ssl-backend-files.zig"
+                };
+            };
+        }
+        break :blk Pkg {
+            .name = "no-ssl-backend-configured",
+            .path = "no-ssl-backend-configured.zig"
+        };
+    };
     exe.addPackage(Pkg {
         .name = "ziget",
         .path = try join(b, &[_][]const u8 { ziget_repo, "ziget.zig" }),
-        .dependencies = &[_]Pkg {
-            if (ssl_backend) |backend| try zigetbuild.addSslBackend(exe, backend, ziget_repo)
-            else Pkg { .name = "no-ssl-backend-configured", .path = "no-ssl-backend-configured.zig" },
-        },
+        .dependencies = &[_]Pkg {ziget_ssl_pkg},
     });
     exe.step.dependOn(&require_ssl_backend.step);
     return exe;
 }
+
+const SslBackendFailedStep = struct {
+    step: std.build.Step,
+    context: []const u8,
+    backend: SslBackend,
+    pub fn init(b: *Builder, context: []const u8, backend: SslBackend) SslBackendFailedStep {
+        return .{
+            .step = std.build.Step.init(.Custom, "SslBackendFailedStep", b.allocator, make),
+            .context = context,
+            .backend = backend,
+        };
+    }
+    fn make(step: *std.build.Step) !void {
+        const self = @fieldParentPtr(RequireSslBackendStep, "step", step);
+        std.debug.print("error: the {s} failed to add the {s} SSL backend\n", .{self.context, self.backend});
+        std.os.exit(1);
+    }
+};
 
 const RequireSslBackendStep = struct {
     step: std.build.Step,
