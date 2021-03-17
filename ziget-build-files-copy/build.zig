@@ -215,15 +215,17 @@ pub fn addSslBackend(step: *std.build.LibExeObjStep, backend: SslBackend, ziget_
             const iguana_index_file = try (GitRepo {
                 .url = "https://github.com/alexnask/iguanaTLS",
                 .branch = null,
-                .sha = "2c21764167d4a95960b6c249517dc6c9688c4913",
+                .sha = "d7f2ebb2be483c8b73c2024cdb57db3f018ba5fe",
             }).resolveOneFile(b.allocator, "src" ++ std.fs.path.sep_str ++ "main.zig");
-            return Pkg {
+            var p = Pkg {
                 .name = "ssl",
                 .path = try std.fs.path.join(b.allocator, &[_][]const u8 { ziget_repo, "iguana", "ssl.zig" }),
                 .dependencies = &[_]Pkg {
                     .{ .name = "iguana", .path = iguana_index_file },
                 },
             };
+            // NOTE: I don't know why I need to call dupePkg, I think this is a bug
+            return b.dupePkg(p);
         },
         .schannel => {
             {
@@ -310,7 +312,7 @@ pub const GitRepo = struct {
             optional_repos_dir_to_clean = repos_dir;
             break :blk try std.fs.path.join(allocator, &[_][]const u8{ repos_dir, std.fs.path.basename(self.url) });
         };
-        errdefer self.allocator.free(path);
+        errdefer allocator.free(path);
 
         std.fs.accessAbsolute(path, std.fs.File.OpenFlags { .read = true }) catch |err| {
             std.debug.print("Error: repository '{s}' does not exist\n", .{path});
