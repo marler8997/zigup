@@ -1,0 +1,3 @@
+[submodule "dep/ziget"]
+	path = dep/ziget
+	url = https://github.com/marler8997/ziget
