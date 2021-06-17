@@ -7,10 +7,13 @@ const Allocator = mem.Allocator;
 
 const ziget = @import("ziget");
 
+const fixdeletetree = @import("fixdeletetree.zig");
+
 const arch = "x86_64";
 const os = if (builtin.os.tag == .windows) "windows" else "linux";
 const url_platform = os ++ "-" ++ arch;
 const json_platform = arch ++ "-" ++ os;
+const archive_ext = if (builtin.os.tag == .windows) "zip" else "tar.xz";
 
 var global_optional_install_dir: ?[]const u8 = null;
 var global_optional_path_link: ?[]const u8 = null;
@@ -125,6 +128,9 @@ fn makeZigPathLinkString(allocator: *Allocator) ![]const u8 {
 
     // for now we're just going to hardcode the path to $HOME/bin/zig
     const home = try getHomeDir();
+    if (builtin.os.tag == .windows) {
+        return try std.fs.path.join(allocator, &[_][]const u8{ home, "zig.bat" });
+    }
     return try std.fs.path.join(allocator, &[_][]const u8{ home, "bin", "zig" });
 }
 
@@ -333,7 +339,9 @@ fn fetchCompiler(allocator: *Allocator, version_arg: []const u8, set_default: Se
         const master_symlink = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, "master" });
         defer allocator.free(master_symlink);
         if (builtin.os.tag == .windows) {
-            @panic("TODO: what to do about master symlink on windows?");
+            var file = try std.fs.createFileAbsolute(master_symlink, .{});
+            defer file.close();
+            try file.writer().writeAll(version_url.version);
         } else {
             _ = try loggyUpdateSymlink(version_url.version, master_symlink, .{ .is_directory = true });
         }
@@ -386,7 +394,7 @@ fn loggyDeleteTreeAbsolute(dir_absolute: []const u8) !void {
     } else {
         std.debug.print("rm -rf '{s}'\n", .{dir_absolute});
     }
-    try std.fs.deleteTreeAbsolute(dir_absolute);
+    try fixdeletetree.deleteTreeAbsolute(dir_absolute);
 }
 
 pub fn loggyRenameAbsolute(old_path: []const u8, new_path: []const u8) !void {
@@ -499,7 +507,7 @@ fn cleanCompilers(allocator: *Allocator, compiler_name_opt: ?[]const u8) !void {
             return error.AlreadyReported;
         }
         std.debug.print("deleting '{s}{c}{s}'\n", .{ install_dir_string, std.fs.path.sep, compiler_name });
-        try install_dir.deleteTree(compiler_name);
+        try fixdeletetree.deleteTree(install_dir, compiler_name);
     } else {
         var it = install_dir.iterate();
         while (try it.next()) |entry| {
@@ -520,28 +528,60 @@ fn cleanCompilers(allocator: *Allocator, compiler_name_opt: ?[]const u8) !void {
                 else => return e,
             }
             std.debug.print("deleting '{s}{c}{s}'\n", .{ install_dir_string, std.fs.path.sep, entry.name });
-            try install_dir.deleteTree(entry.name);
+            try fixdeletetree.deleteTree(install_dir, entry.name);
         }
     }
 }
 fn readDefaultCompiler(allocator: *Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8) !?[]const u8 {
     const path_link = try makeZigPathLinkString(allocator);
     defer allocator.free(path_link);
-    if (std.fs.readLinkAbsolute(path_link, buffer)) |targetPath| {
-        return std.fs.path.basename(std.fs.path.dirname(std.fs.path.dirname(targetPath).?).?);
-    } else |e| switch (e) {
-        error.FileNotFound => {
-            return null;
-        },
-        else => return e,
+
+    if (builtin.os.tag == .windows) {
+        var file = std.fs.openFileAbsolute(path_link, .{}) catch |e| switch (e) {
+            error.FileNotFound => return null,
+            else => return e,
+        };
+        defer file.close();
+        const content = try file.readToEndAlloc(allocator, 99999);
+        defer allocator.free(content);
+        if (content.len == 0) {
+            std.log.err("path link file '{s}' is empty", .{path_link});
+            return error.AlreadyReported;
+        }
+        if (content[0] != '@') {
+            std.log.err("path link file '{s}' does not begin with the '@' character", .{path_link});
+            return error.AlreadyReported;
+        }
+        if (!std.mem.endsWith(u8, content, " %*")) {
+            std.log.err("path link file '{s}' does not end with ' %*'", .{path_link});
+            return error.AlreadyReported;
+        }
+        const target_exe = content[1..content.len - 3];
+        return try std.mem.dupe(allocator, u8, targetPathToVersion(target_exe));
     }
+
+    const target_path = std.fs.readLinkAbsolute(path_link, buffer) catch |e| switch (e) {
+        error.FileNotFound => return null,
+        else => return e,
+    };
+    defer allocator.free(target_path);
+    return try std.mem.dupe(allocator, u8, targetPathToVersion(target_path));
+}
+fn targetPathToVersion(target_path: []const u8) []const u8 {
+    return std.fs.path.basename(std.fs.path.dirname(std.fs.path.dirname(target_path).?).?);
 }
 
-fn readMasterDir(allocator: *Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8, install_dir: *std.fs.Dir) !?[]const u8 {
+fn readMasterDir(buffer: *[std.fs.MAX_PATH_BYTES]u8, install_dir: *std.fs.Dir) !?[]const u8 {
+    if (builtin.os.tag == .windows) {
+        var file = install_dir.openFile("master", .{}) catch |e| switch (e) {
+            error.FileNotFound => return null,
+            else => return e,
+        };
+        defer file.close();
+        return buffer[0..try file.readAll(buffer)];
+    }
     return install_dir.readLink("master", buffer) catch |e| switch (e) {
-        error.FileNotFound => {
-            return null;
-        },
+        error.FileNotFound => return null,
         else => return e,
     };
 }
@@ -556,7 +596,7 @@ fn getDefaultCompiler(allocator: *Allocator) !?[]const u8 {
 
 fn getMasterDir(allocator: *Allocator, install_dir: *std.fs.Dir) !?[]const u8 {
     var buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
-    const slice_path = (try readMasterDir(allocator, &buffer, install_dir)) orelse return null;
+    const slice_path = (try readMasterDir(&buffer, install_dir)) orelse return null;
     var path_to_return = try allocator.alloc(u8, slice_path.len);
     std.mem.copy(u8, path_to_return, slice_path);
     return path_to_return;
@@ -565,28 +605,30 @@ fn getMasterDir(allocator: *Allocator, install_dir: *std.fs.Dir) !?[]const u8 {
 fn printDefaultCompiler(allocator: *Allocator) !void {
     const default_compiler_opt = try getDefaultCompiler(allocator);
     defer if (default_compiler_opt) |default_compiler| allocator.free(default_compiler);
+    const stdout = std.io.getStdOut().writer();
     if (default_compiler_opt) |default_compiler| {
-        std.debug.print("{s}\n", .{default_compiler});
+        try stdout.print("{s}\n", .{default_compiler});
     } else {
-        std.debug.print("<no-default>\n", .{});
+        try stdout.writeAll("<no-default>\n");
     }
 }
 
 fn setDefaultCompiler(allocator: *Allocator, compiler_dir: []const u8) !void {
     const path_link = try makeZigPathLinkString(allocator);
     defer allocator.free(path_link);
-    const link_target = try std.fs.path.join(allocator, &[_][]const u8{ compiler_dir, "files", "zig" });
+    const link_target = try std.fs.path.join(allocator, &[_][]const u8{ compiler_dir, "files", "zig" ++ builtin.target.exeFileExt() });
     defer allocator.free(link_target);
     if (builtin.os.tag == .windows) {
-        // TODO: create zig.bat file
-        @panic("setDefaultCompiler not implemented in Windows");
+        var file = try std.fs.cwd().createFile(path_link, .{});
+        defer file.close();
+        try file.writer().print("@{s} %*", .{link_target});
     } else {
         _ = try loggyUpdateSymlink(link_target, path_link, .{});
     }
 }
 
 fn getDefaultUrl(allocator: *Allocator, compiler_version: []const u8) ![]const u8 {
-    return try std.fmt.allocPrint(allocator, "https://ziglang.org/download/{s}/zig-" ++ url_platform ++ "-{s}.tar.xz", .{ compiler_version, compiler_version });
+    return try std.fmt.allocPrint(allocator, "https://ziglang.org/download/{s}/zig-" ++ url_platform ++ "-{0s}." ++ archive_ext, .{ compiler_version });
 }
 
 fn installCompiler(allocator: *Allocator, compiler_dir: []const u8, url: []const u8) !void {
@@ -622,6 +664,11 @@ fn installCompiler(allocator: *Allocator, compiler_dir: []const u8, url: []const
         if (std.mem.endsWith(u8, archive_basename, ".tar.xz")) {
             archive_root_dir = archive_basename[0 .. archive_basename.len - ".tar.xz".len];
             _ = try run(allocator, &[_][]const u8{ "tar", "xf", archive_absolute, "-C", installing_dir });
+        } else if (std.mem.endsWith(u8, archive_basename, ".zip")) {
+            // for now we'll use "tar" which seems to exist on windows 10, but we should switch
+            // to a zig implementation (i.e. https://github.com/SuperAuguste/zzip)
+            archive_root_dir = archive_basename[0 .. archive_basename.len - ".zip".len];
+            _ = try run(allocator, &[_][]const u8{ "tar", "-xf", archive_absolute, "-C", installing_dir });
         } else {
             std.debug.print("Error: unknown archive extension '{s}'\n", .{archive_basename});
             return error.UnknownArchiveExtension;

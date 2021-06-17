@@ -3,9 +3,11 @@ const testing = std.testing;
 
 const sep = std.fs.path.sep_str;
 
+const fixdeletetree = @import("fixdeletetree.zig");
+
 pub fn main() !void {
     std.log.info("running test!", .{});
-    try std.fs.cwd().deleteTree("scratch");
+    try fixdeletetree.deleteTree(std.fs.cwd(), "scratch");
     try std.fs.cwd().makeDir("scratch");
     const install_dir = "scratch" ++ sep ++ "install";
     const bin_dir = "scratch" ++ sep ++ "bin";
@@ -14,7 +16,8 @@ pub fn main() !void {
 
     // NOTE: for now we are incorrectly assuming the install dir is CWD/zig-out
     const zigup = "." ++ sep ++ "zig-out" ++ sep ++ "bin" ++ sep ++ "zigup" ++ std.builtin.target.exeFileExt();
-    const zigup_args = &[_][]const u8 { zigup, "--install-dir", install_dir, "--path-link", bin_dir ++ sep ++ "zig" };
+    const path_link = if (std.builtin.os.tag == .windows) "scratch\\zig.bat" else (bin_dir ++ sep ++ "zig");
+    const zigup_args = &[_][]const u8 { zigup, "--install-dir", install_dir, "--path-link", path_link };
 
     var allocator_store = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer allocator_store.deinit();
@@ -35,7 +38,7 @@ pub fn main() !void {
         const result = try runCaptureOuts(allocator, ".", zigup_args ++ &[_][]const u8 {"default"});
         defer { allocator.free(result.stdout); allocator.free(result.stderr); }
         try passOrDumpAndThrow(result);
-        try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "<no-default>"));
+        try testing.expect(std.mem.eql(u8, result.stdout, "<no-default>\n"));
     }
     {
         const result = try runCaptureOuts(allocator, ".", zigup_args ++ &[_][]const u8 {"fetch-index"});
@@ -45,6 +48,13 @@ pub fn main() !void {
     }
     try runNoCapture(".", zigup_args ++ &[_][]const u8 {"0.5.0"});
     {
+        const result = try runCaptureOuts(allocator, ".", zigup_args ++ &[_][]const u8 {"default"});
+        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        try passOrDumpAndThrow(result);
+        dumpExecResult(result);
+        try testing.expect(std.mem.eql(u8, result.stdout, "0.5.0\n"));
+    }
+    {
         const result = try runCaptureOuts(allocator, ".", zigup_args ++ &[_][]const u8 {"fetch", "0.5.0"});
         defer { allocator.free(result.stdout); allocator.free(result.stderr); }
         try passOrDumpAndThrow(result);
@@ -52,6 +62,13 @@ pub fn main() !void {
     }
     try runNoCapture(".", zigup_args ++ &[_][]const u8 {"master"});
     try runNoCapture(".", zigup_args ++ &[_][]const u8 {"0.6.0"});
+    {
+        const result = try runCaptureOuts(allocator, ".", zigup_args ++ &[_][]const u8 {"default"});
+        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        try passOrDumpAndThrow(result);
+        dumpExecResult(result);
+        try testing.expect(std.mem.eql(u8, result.stdout, "0.6.0\n"));
+    }
     {
         const result = try runCaptureOuts(allocator, ".", zigup_args ++ &[_][]const u8 {"list"});
         defer { allocator.free(result.stdout); allocator.free(result.stderr); }
@@ -104,18 +121,27 @@ fn getCompilerCount(install_dir: []const u8) !u32 {
         if (entry.kind == .Directory) {
             count += 1;
         } else {
-            try testing.expect(entry.kind == .SymLink);
+            if (std.builtin.os.tag == .windows) {
+                try testing.expect(entry.kind == .File);
+            } else {
+                try testing.expect(entry.kind == .SymLink);
+            }
         }
     }
     return count;
 }
 
+
+fn trailNl(s: []const u8) []const u8 {
+    return if (s.len == 0 or s[s.len-1] != '\n') "\n" else "";
+}
+
 fn dumpExecResult(result: std.ChildProcess.ExecResult) void {
     if (result.stdout.len > 0) {
-        std.log.info("STDOUT: '{s}'", .{result.stdout});
+        std.debug.print("--- STDOUT ---\n{s}{s}--------------\n", .{result.stdout, trailNl(result.stdout)});
     }
     if (result.stderr.len > 0) {
-        std.log.info("STDERR: '{s}'", .{result.stderr});
+        std.debug.print("--- STDERR ---\n{s}{s}--------------\n", .{result.stderr, trailNl(result.stderr)});
     }
 }
 
