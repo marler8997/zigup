@@ -16,7 +16,7 @@ pub fn build(b: *Builder) !void {
     const ziget_repo = try (GitRepo {
         .url = "https://github.com/marler8997/ziget",
         .branch = null,
-        .sha = "4a7817af146d24b233a2dfd8e82261d5c0a43bba",
+        .sha = @embedFile("zigetsha"),
     }).resolve(b.allocator);
 
     // TODO: implement this if/when we get @tryImport
