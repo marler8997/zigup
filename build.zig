@@ -41,6 +41,22 @@ pub fn build(b: *Builder) !void {
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+
+    addTest(b, exe, target, mode);
+}
+
+fn addTest(b: *Builder, exe: *std.build.LibExeObjStep, target: std.zig.CrossTarget, mode: std.builtin.Mode) void {
+    const test_exe = b.addExecutable("test", "test.zig");
+    test_exe.setTarget(target);
+    test_exe.setBuildMode(mode);
+    const run_cmd = test_exe.run();
+
+    // TODO: make this work, add exe install path as argument to test
+    //run_cmd.addArg(exe.getInstallPath());
+    run_cmd.step.dependOn(b.getInstallStep());
+
+    const test_step = b.step("test", "test the executable");
+    test_step.dependOn(&run_cmd.step);
 }
 
 fn addZigupExe(b: *Builder, ziget_repo: []const u8, target: std.zig.CrossTarget, mode: std.builtin.Mode, ssl_backend: ?SslBackend) !*std.build.LibExeObjStep {
