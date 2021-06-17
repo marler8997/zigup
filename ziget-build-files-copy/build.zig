@@ -279,8 +279,8 @@ pub fn setupOpensslWindows(step: *std.build.LibExeObjStep) !void {
     for ([_][]const u8 {"libcrypto-1_1-x64.dll", "libssl-1_1-x64.dll"}) |dll| {
         step.step.dependOn(
             &b.addInstallFileWithDir(
-                try std.fs.path.join(b.allocator, &[_][]const u8 {openssl_path, dll}),
-                .Bin,
+                .{ .path = try std.fs.path.join(b.allocator, &[_][]const u8 {openssl_path, dll}) },
+                .bin,
                 dll,
             ).step
         );
