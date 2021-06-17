@@ -14,7 +14,7 @@ pub fn build(b: *Builder) !void {
     exe.setBuildMode(mode);
     exe.addPackage(
         if (optional_ssl_backend) |ssl_backend| try addSslBackend(exe, ssl_backend, ".")
-        else Pkg { .name = "ssl", .path = "nossl/ssl.zig" }
+        else Pkg { .name = "ssl", .path = .{ .path = "nossl/ssl.zig" } }
     );
     exe.install();
 
@@ -124,7 +124,7 @@ pub fn addSslBackend(step: *std.build.LibExeObjStep, backend: SslBackend, ziget_
             }
             return Pkg {
                 .name = "ssl",
-                .path = try std.fs.path.join(b.allocator, &[_][]const u8 { ziget_repo, "openssl/ssl.zig" }),
+                .path = .{ .path = try std.fs.path.join(b.allocator, &[_][]const u8 { ziget_repo, "openssl/ssl.zig" }) },
             };
         },
         .opensslstatic => {
@@ -204,7 +204,7 @@ pub fn addSslBackend(step: *std.build.LibExeObjStep, backend: SslBackend, ziget_
             step.linkLibC();
             return Pkg {
                 .name = "ssl",
-                .path = try std.fs.path.join(b.allocator, &[_][]const u8 { ziget_repo, "openssl/ssl.zig" }),
+                .path = .{ .path = try std.fs.path.join(b.allocator, &[_][]const u8 { ziget_repo, "openssl/ssl.zig" }) },
             };
         },
         .wolfssl => {
@@ -219,9 +219,9 @@ pub fn addSslBackend(step: *std.build.LibExeObjStep, backend: SslBackend, ziget_
             }).resolveOneFile(b.allocator, "src" ++ std.fs.path.sep_str ++ "main.zig");
             var p = Pkg {
                 .name = "ssl",
-                .path = try std.fs.path.join(b.allocator, &[_][]const u8 { ziget_repo, "iguana", "ssl.zig" }),
+                .path = .{ .path = try std.fs.path.join(b.allocator, &[_][]const u8 { ziget_repo, "iguana", "ssl.zig" }) },
                 .dependencies = &[_]Pkg {
-                    .{ .name = "iguana", .path = iguana_index_file },
+                    .{ .name = "iguana", .path = .{ .path = iguana_index_file } },
                 },
             };
             // NOTE: I don't know why I need to call dupePkg, I think this is a bug
@@ -255,9 +255,9 @@ pub fn addSslBackend(step: *std.build.LibExeObjStep, backend: SslBackend, ziget_
             //    "src" ++ std.fs.path.sep_str ++ "win32.zig");
             return Pkg {
                 .name = "ssl",
-                .path = try std.fs.path.join(b.allocator, &[_][]const u8 { ziget_repo, "schannel", "ssl.zig" }),
+                .path = .{ .path = try std.fs.path.join(b.allocator, &[_][]const u8 { ziget_repo, "schannel", "ssl.zig" }) },
                 //.dependencies = &[_]Pkg {
-                //    .{ .name = "win32", .path = zigwin32_index_file },
+                //    .{ .name = "win32", .path = .{ .path = zigwin32_index_file } },
                 //},
             };
         }

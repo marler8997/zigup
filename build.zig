@@ -16,7 +16,7 @@ pub fn build(b: *Builder) !void {
     const ziget_repo = try (GitRepo {
         .url = "https://github.com/marler8997/ziget",
         .branch = null,
-        .sha = "40e159de0c547de48d89044f97ef9d4910ea32b6",
+        .sha = "f75efdac2774ebf5bdae577ba64f1b3583bcce8d",
     }).resolve(b.allocator);
 
     // TODO: implement this if/when we get @tryImport
@@ -58,18 +58,18 @@ fn addZigupExe(b: *Builder, ziget_repo: []const u8, target: std.zig.CrossTarget,
                 ssl_backend_failed.* = SslBackendFailedStep.init(b, "the zigup exe", backend);
                 break :blk Pkg {
                     .name = "missing-ssl-backend-files",
-                    .path = "missing-ssl-backend-files.zig"
+                    .path = .{ .path = "missing-ssl-backend-files.zig" },
                 };
             };
         }
         break :blk Pkg {
             .name = "no-ssl-backend-configured",
-            .path = "no-ssl-backend-configured.zig"
+            .path = .{ .path = "no-ssl-backend-configured.zig" },
         };
     };
     exe.addPackage(Pkg {
         .name = "ziget",
-        .path = try join(b, &[_][]const u8 { ziget_repo, "ziget.zig" }),
+        .path = .{ .path = try join(b, &[_][]const u8 { ziget_repo, "ziget.zig" }) },
         .dependencies = &[_]Pkg {ziget_ssl_pkg},
     });
     exe.step.dependOn(&require_ssl_backend.step);
@@ -82,7 +82,7 @@ const SslBackendFailedStep = struct {
     backend: SslBackend,
     pub fn init(b: *Builder, context: []const u8, backend: SslBackend) SslBackendFailedStep {
         return .{
-            .step = std.build.Step.init(.Custom, "SslBackendFailedStep", b.allocator, make),
+            .step = std.build.Step.init(.custom, "SslBackendFailedStep", b.allocator, make),
             .context = context,
             .backend = backend,
         };
@@ -100,7 +100,7 @@ const RequireSslBackendStep = struct {
     backend: ?SslBackend,
     pub fn init(b: *Builder, context: []const u8, backend: ?SslBackend) RequireSslBackendStep {
         return .{
-            .step = std.build.Step.init(.Custom, "RequireSslBackend", b.allocator, make),
+            .step = std.build.Step.init(.custom, "RequireSslBackend", b.allocator, make),
             .context = context,
             .backend = backend,
         };
