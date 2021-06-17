@@ -215,7 +215,7 @@ pub fn addSslBackend(step: *std.build.LibExeObjStep, backend: SslBackend, ziget_
             const iguana_index_file = try (GitRepo {
                 .url = "https://github.com/alexnask/iguanaTLS",
                 .branch = null,
-                .sha = "d7f2ebb2be483c8b73c2024cdb57db3f018ba5fe",
+                .sha = "0c0b357664397965936175d551576004cdf9da0d",
             }).resolveOneFile(b.allocator, "src" ++ std.fs.path.sep_str ++ "main.zig");
             var p = Pkg {
                 .name = "ssl",
