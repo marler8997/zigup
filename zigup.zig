@@ -7,6 +7,11 @@ const Allocator = mem.Allocator;
 
 const ziget = @import("ziget");
 
+const arch = "x86_64";
+const os = if (builtin.os.tag == .windows) "windows" else "linux";
+const url_platform = os ++ "-" ++ arch;
+const json_platform = arch ++ "-" ++ os;
+
 var global_optional_install_dir: ?[]const u8 = null;
 var global_optional_path_link: ?[]const u8 = null;
 
@@ -72,6 +77,10 @@ fn downloadToString(allocator: *Allocator, url: []const u8) ![]u8 {
 fn ignoreHttpCallback(request: []const u8) void {}
 
 fn getHomeDir() ![]const u8 {
+    if (builtin.os.tag == .windows) {
+        // TODO: replace with something else
+        return "C:\\tools";
+    }
     return std.os.getenv("HOME") orelse {
         std.debug.print("Error: cannot find install directory, $HOME environment variable is not set\n", .{});
         return error.MissingHomeEnvironmentVariable;
@@ -169,6 +178,10 @@ pub fn main() !u8 {
     };
 }
 pub fn main2() !u8 {
+    if (builtin.os.tag == .windows) {
+        _ = try std.os.windows.WSAStartup(2, 2);
+    }
+
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     const allocator = &arena.allocator;
 
@@ -309,7 +322,7 @@ fn fetchCompiler(allocator: *Allocator, version_arg: []const u8, set_default: Se
         optional_download_index = try fetchDownloadIndex(allocator);
         const master = optional_download_index.?.json.root.Object.get("master").?;
         const compiler_version = master.Object.get("version").?.String;
-        const master_linux = master.Object.get("x86_64-linux").?;
+        const master_linux = master.Object.get(json_platform).?;
         const master_linux_tarball = master_linux.Object.get("tarball").?.String;
         break :blk VersionUrl{ .version = compiler_version, .url = master_linux_tarball };
     };
@@ -319,7 +332,11 @@ fn fetchCompiler(allocator: *Allocator, version_arg: []const u8, set_default: Se
     if (is_master) {
         const master_symlink = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, "master" });
         defer allocator.free(master_symlink);
-        _ = try loggyUpdateSymlink(version_url.version, master_symlink, .{ .is_directory = true });
+        if (builtin.os.tag == .windows) {
+            @panic("TODO: what to do about master symlink on windows?");
+        } else {
+            _ = try loggyUpdateSymlink(version_url.version, master_symlink, .{ .is_directory = true });
+        }
     }
     if (set_default == .set_default) {
         try setDefaultCompiler(allocator, compiler_dir);
@@ -569,7 +586,7 @@ fn setDefaultCompiler(allocator: *Allocator, compiler_dir: []const u8) !void {
 }
 
 fn getDefaultUrl(allocator: *Allocator, compiler_version: []const u8) ![]const u8 {
-    return try std.fmt.allocPrint(allocator, "https://ziglang.org/download/{s}/zig-linux-x86_64-{s}.tar.xz", .{ compiler_version, compiler_version });
+    return try std.fmt.allocPrint(allocator, "https://ziglang.org/download/{s}/zig-" ++ url_platform ++ "-{s}.tar.xz", .{ compiler_version, compiler_version });
 }
 
 fn installCompiler(allocator: *Allocator, compiler_dir: []const u8, url: []const u8) !void {
