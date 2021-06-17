@@ -1,0 +1,25 @@
+name: Artifacts
+on: [push]
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+      fail-fast: false
+    runs-on: ${{matrix.os}}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: goto-bus-stop/setup-zig@v1
+        with:
+          version: master
+      - run: |
+          git clone https://github.com/marler8997/ziget ./dep/ziget
+          git -C ./dep/ziget checkout $(cat zigetsha) -b for_zigup
+          git clone https://github.com/alexnask/iguanaTLS ./dep/iguanaTLS
+          git -C ./dep/iguanaTLS checkout 0c0b357664397965936175d551576004cdf9da0d -b for_ziget
+          zig build test -Diguana -Dcpu=baseline
+        shell: bash
+      - uses: actions/upload-artifact@v2
+        with:
+          name: zigup ${{ matrix.os }}
+          path: zig-out/bin/*
