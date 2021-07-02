@@ -19,7 +19,6 @@ var global_optional_install_dir: ?[]const u8 = null;
 var global_optional_path_link: ?[]const u8 = null;
 
 fn find_zigs(allocator: *Allocator) !?[][]u8 {
-    const ziglist = std.ArrayList([]u8).init(allocator);
     // don't worry about free for now, this is a short lived program
 
     if (builtin.os.tag == .windows) {
@@ -77,7 +76,7 @@ fn downloadToString(allocator: *Allocator, url: []const u8) ![]u8 {
     return response_array_list.toOwnedSlice();
 }
 
-fn ignoreHttpCallback(request: []const u8) void {}
+fn ignoreHttpCallback(request: []const u8) void { _ = request; }
 
 fn getHomeDir() ![]const u8 {
     if (builtin.os.tag == .windows) {
@@ -407,6 +406,7 @@ pub fn loggySymlinkAbsolute(target_path: []const u8, sym_link_path: []const u8, 
     // NOTE: can't use symLinkAbsolute because it requires target_path to be absolute but we don't want that
     //       not sure if it is a bug in the standard lib or not
     //try std.fs.symLinkAbsolute(target_path, sym_link_path, flags);
+    _ = flags;
     try std.os.symlink(target_path, sym_link_path);
 }
 
