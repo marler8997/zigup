@@ -25,7 +25,7 @@ pub fn build(b: *Builder) !void {
     //    return;
     //}
 
-    var github_release_step = b.step("github-release", "Build the github-release binaries");
+    //var github_release_step = b.step("github-release", "Build the github-release binaries");
     // TODO: need to implement some interesting logic to make this work without
     //       having the iguana repo copied into this one
     //try addGithubReleaseExe(b, github_release_step, ziget_repo, "x86_64-linux", SslBackend.iguana);
@@ -53,6 +53,7 @@ fn addTest(b: *Builder, exe: *std.build.LibExeObjStep, target: std.zig.CrossTarg
 
     // TODO: make this work, add exe install path as argument to test
     //run_cmd.addArg(exe.getInstallPath());
+    _ = exe;
     run_cmd.step.dependOn(b.getInstallStep());
 
     const test_step = b.step("test", "test the executable");
@@ -69,7 +70,7 @@ fn addZigupExe(b: *Builder, ziget_repo: []const u8, target: std.zig.CrossTarget,
 
     const ziget_ssl_pkg = blk: {
         if (ssl_backend) |backend| {
-            break :blk zigetbuild.addSslBackend(exe, backend, ziget_repo) catch |err| {
+            break :blk zigetbuild.addSslBackend(exe, backend, ziget_repo) catch {
                 const ssl_backend_failed = b.allocator.create(SslBackendFailedStep) catch unreachable;
                 ssl_backend_failed.* = SslBackendFailedStep.init(b, "the zigup exe", backend);
                 break :blk Pkg {
@@ -125,7 +126,7 @@ const RequireSslBackendStep = struct {
         const self = @fieldParentPtr(RequireSslBackendStep, "step", step);
         if (self.backend) |_| { } else {
             std.debug.print("error: {s} requires an SSL backend:\n", .{self.context});
-            inline for (zigetbuild.ssl_backends) |field, i| {
+            inline for (zigetbuild.ssl_backends) |field| {
                 std.debug.print("    -D{s}\n", .{field.name});
             }
             std.os.exit(1);
@@ -178,7 +179,7 @@ pub const GitRepo = struct {
         };
         errdefer self.allocator.free(path);
 
-        std.fs.accessAbsolute(path, std.fs.File.OpenFlags { .read = true }) catch |err| {
+        std.fs.accessAbsolute(path, std.fs.File.OpenFlags { .read = true }) catch {
             std.debug.print("Error: repository '{s}' does not exist\n", .{path});
             std.debug.print("       Run the following to clone it:\n", .{});
             const branch_args = if (self.branch) |b| &[2][]const u8 {" -b ", b} else &[2][]const u8 {"", ""};

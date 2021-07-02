@@ -33,7 +33,7 @@ fn addTests(b: *Builder, target: std.zig.CrossTarget, mode: std.builtin.Mode) vo
     test_exe.setBuildMode(mode);
 
     const test_step = b.step("test", "Run all the 'Enabled' tests");
-    inline for (ssl_backends) |field, i| {
+    inline for (ssl_backends) |field| {
         const enum_value = @field(SslBackend, field.name);
         const enabled_by_default =
             if (enum_value == .wolfssl) false
@@ -314,7 +314,7 @@ pub const GitRepo = struct {
         };
         errdefer allocator.free(path);
 
-        std.fs.accessAbsolute(path, std.fs.File.OpenFlags { .read = true }) catch |err| {
+        std.fs.accessAbsolute(path, std.fs.File.OpenFlags { .read = true }) catch {
             std.debug.print("Error: repository '{s}' does not exist\n", .{path});
             std.debug.print("       Run the following to clone it:\n", .{});
             const branch_args = if (self.branch) |b| &[2][]const u8 {" -b ", b} else &[2][]const u8 {"", ""};
