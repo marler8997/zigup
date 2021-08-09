@@ -9,8 +9,17 @@ const ziget = @import("ziget");
 
 const fixdeletetree = @import("fixdeletetree.zig");
 
-const arch = "x86_64";
-const os = if (builtin.os.tag == .windows) "windows" else "linux";
+const arch = switch(builtin.cpu.arch) {
+    .x86_64 => "x86_64",
+    .aarch64 => "aarch64",
+    else => @compileError("Unsupported CPU Architecture"),
+};
+const os = switch(builtin.os.tag) {
+    .windows => "windows",
+    .linux => "linux",
+    .macos => "macos",
+    else => @compileError("Unsupported OS"),
+};
 const url_platform = os ++ "-" ++ arch;
 const json_platform = arch ++ "-" ++ os;
 const archive_ext = if (builtin.os.tag == .windows) "zip" else "tar.xz";
