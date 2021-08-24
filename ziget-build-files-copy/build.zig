@@ -195,7 +195,7 @@ pub fn addSslBackend(step: *std.build.LibExeObjStep, backend: SslBackend, ziget_
             };
             {
                 const sources = @embedFile("openssl/sources");
-                var source_lines = std.mem.split(sources, "\n");
+                var source_lines = std.mem.split(u8, sources, "\n");
                 while (source_lines.next()) |src| {
                     if (src.len == 0 or src[0] == '#') continue;
                     step.addCSourceFile(try std.fs.path.join(b.allocator, &[_][]const u8 { openssl_repo, src }), cflags);
