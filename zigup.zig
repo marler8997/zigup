@@ -27,31 +27,31 @@ const archive_ext = if (builtin.os.tag == .windows) "zip" else "tar.xz";
 var global_optional_install_dir: ?[]const u8 = null;
 var global_optional_path_link: ?[]const u8 = null;
 
-fn find_zigs(allocator: *Allocator) !?[][]u8 {
-    // don't worry about free for now, this is a short lived program
-
-    if (builtin.os.tag == .windows) {
-        @panic("windows not implemented");
-        //const result = try runGetOutput(allocator, .{"where", "-a", "zig"});
-    } else {
-        const which_result = try cmdlinetool.runGetOutput(allocator, .{ "which", "zig" });
-        if (runutil.runFailed(&which_result)) {
-            return null;
-        }
-        if (which_result.stderr.len > 0) {
-            std.debug.print("which command failed with:\n{s}\n", .{which_result.stderr});
-            std.os.exit(1);
-        }
-        std.debug.print("which output:\n{s}\n", .{which_result.stdout});
-        {
-            var i = std.mem.split(which_result.stdout, "\n");
-            while (i.next()) |dir| {
-                std.debug.print("path '{s}'\n", .{dir});
-            }
-        }
-    }
-    @panic("not impl");
-}
+//fn find_zigs(allocator: *Allocator) !?[][]u8 {
+//    // don't worry about free for now, this is a short lived program
+//
+//    if (builtin.os.tag == .windows) {
+//        @panic("windows not implemented");
+//        //const result = try runGetOutput(allocator, .{"where", "-a", "zig"});
+//    } else {
+//        const which_result = try cmdlinetool.runGetOutput(allocator, .{ "which", "zig" });
+//        if (runutil.runFailed(&which_result)) {
+//            return null;
+//        }
+//        if (which_result.stderr.len > 0) {
+//            std.debug.print("which command failed with:\n{s}\n", .{which_result.stderr});
+//            std.os.exit(1);
+//        }
+//        std.debug.print("which output:\n{s}\n", .{which_result.stdout});
+//        {
+//            var i = std.mem.split(which_result.stdout, "\n");
+//            while (i.next()) |dir| {
+//                std.debug.print("path '{s}'\n", .{dir});
+//            }
+//        }
+//    }
+//    @panic("not impl");
+//}
 
 fn download(allocator: *Allocator, url: []const u8, writer: anytype) !void {
     var download_options = ziget.request.DownloadOptions{
@@ -734,15 +734,6 @@ pub fn getCommandStringLength(argv: []const []const u8) usize {
         prefix_length = 1;
     }
     return len;
-}
-
-pub fn appendCommandString(appender: *appendlib.Appender(u8), argv: []const []const u8) void {
-    var prefix: []const u8 = "";
-    for (argv) |arg| {
-        appender.appendSlice(prefix);
-        appender.appendSlice(arg);
-        prefix = " ";
-    }
 }
 
 pub fn getKeepReason(master_points_to_opt: ?[]const u8, default_compiler_opt: ?[]const u8, name: []const u8) ?[]const u8 {
