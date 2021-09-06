@@ -11,11 +11,11 @@ jobs:
       - uses: actions/checkout@v2
       - uses: goto-bus-stop/setup-zig@v1
         with:
-          version: 0.9.0-dev.856+dd7530256
+          version: 0.9.0-dev.927+eb5e4ac49
       - run: |
           git clone https://github.com/marler8997/ziget ./dep/ziget
           git -C ./dep/ziget checkout $(cat zigetsha) -b for_zigup
-          git clone https://github.com/alexnask/iguanaTLS ./dep/iguanaTLS
+          git clone https://github.com/marler8997/iguanaTLS ./dep/iguanaTLS
           git -C ./dep/iguanaTLS checkout $(cat ziget-build-files-copy/iguanasha) -b for_ziget
           zig build test -Diguana -Dcpu=baseline
         shell: bash
