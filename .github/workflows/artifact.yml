@@ -17,6 +17,8 @@ jobs:
           git -C ./dep/ziget checkout $(cat zigetsha) -b for_zigup
           git clone https://github.com/marler8997/iguanaTLS ./dep/iguanaTLS
           git -C ./dep/iguanaTLS checkout $(cat ziget-build-files-copy/iguanasha) -b for_ziget
+          git clone https://github.com/SuperAuguste/zarc ./dep/zarc
+          git -C ./dep/zarc checkout $(cat zarcsha) -b for_zigup
           zig build test -Diguana -Dcpu=baseline
         shell: bash
       - uses: actions/upload-artifact@v2

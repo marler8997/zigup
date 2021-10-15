@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const Builder = std.build.Builder;
 const Pkg = std.build.Pkg;
 
@@ -89,8 +90,27 @@ fn addZigupExe(b: *Builder, ziget_repo: []const u8, target: std.zig.CrossTarget,
         .path = .{ .path = try join(b, &[_][]const u8 { ziget_repo, "ziget.zig" }) },
         .dependencies = &[_]Pkg {ziget_ssl_pkg},
     });
+
+    if (targetIsWindows(target)) {
+        const zarc_repo = try (GitRepo {
+            .url = "https://github.com/SuperAuguste/zarc",
+            .branch = null,
+            .sha = @embedFile("zarcsha"),
+        }).resolve(b.allocator);
+        exe.addPackage(Pkg {
+            .name = "zarc",
+            .path = .{ .path = try join(b, &[_][]const u8 { zarc_repo, "src", "main.zig" }) },
+        });
+    }
+
     exe.step.dependOn(&require_ssl_backend.step);
     return exe;
+}
+
+fn targetIsWindows(target: std.zig.CrossTarget) bool {
+    if (target.os_tag) |tag|
+        return tag == .windows;
+    return builtin.target.os.tag == .windows;
 }
 
 const SslBackendFailedStep = struct {

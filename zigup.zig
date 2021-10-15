@@ -6,6 +6,7 @@ const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
 
 const ziget = @import("ziget");
+const zarc = @import("zarc");
 
 const fixdeletetree = @import("fixdeletetree.zig");
 
@@ -673,14 +674,33 @@ fn installCompiler(allocator: *Allocator, compiler_dir: []const u8, url: []const
         if (std.mem.endsWith(u8, archive_basename, ".tar.xz")) {
             archive_root_dir = archive_basename[0 .. archive_basename.len - ".tar.xz".len];
             _ = try run(allocator, &[_][]const u8{ "tar", "xf", archive_absolute, "-C", installing_dir });
-        } else if (std.mem.endsWith(u8, archive_basename, ".zip")) {
-            // for now we'll use "tar" which seems to exist on windows 10, but we should switch
-            // to a zig implementation (i.e. https://github.com/SuperAuguste/zzip)
-            archive_root_dir = archive_basename[0 .. archive_basename.len - ".zip".len];
-            _ = try run(allocator, &[_][]const u8{ "tar", "-xf", archive_absolute, "-C", installing_dir });
         } else {
-            std.debug.print("Error: unknown archive extension '{s}'\n", .{archive_basename});
-            return error.UnknownArchiveExtension;
+            var recognized = false;
+            if (builtin.os.tag == .windows) {
+                if (std.mem.endsWith(u8, archive_basename, ".zip")) {
+                    recognized = true;
+                    archive_root_dir = archive_basename[0 .. archive_basename.len - ".zip".len];
+
+                    var installing_dir_opened = try std.fs.openDirAbsolute(installing_dir, .{});
+                    defer installing_dir_opened.close();
+
+                    var archive_file = try std.fs.openFileAbsolute(archive_absolute, .{});
+                    defer archive_file.close();
+                    var archive = zarc.zip.Parser(std.fs.File.Reader).init(allocator, archive_file.reader());
+                    defer archive.deinit();
+                    std.debug.print("extracting archive to \"{s}\"\n", .{installing_dir});
+                    var timer = try std.time.Timer.start();
+                    try archive.load();
+                    _ = try archive.extract(installing_dir_opened, .{});
+                    const time = timer.read();
+                    std.debug.print("extracted archive in {d:.2} s\n", .{@intToFloat(f32, time) / @intToFloat(f32, std.time.ns_per_s)});
+                }
+            }
+
+            if (!recognized) {
+                std.debug.print("Error: unknown archive extension '{s}'\n", .{archive_basename});
+                return error.UnknownArchiveExtension;
+            }
         }
         try loggyDeleteTreeAbsolute(archive_absolute);
     }
