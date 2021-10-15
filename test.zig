@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const testing = std.testing;
 
 const sep = std.fs.path.sep_str;
@@ -15,8 +16,8 @@ pub fn main() !void {
     try std.fs.cwd().makeDir(bin_dir);
 
     // NOTE: for now we are incorrectly assuming the install dir is CWD/zig-out
-    const zigup = "." ++ sep ++ "zig-out" ++ sep ++ "bin" ++ sep ++ "zigup" ++ std.builtin.target.exeFileExt();
-    const path_link = if (std.builtin.os.tag == .windows) "scratch\\zig.bat" else (bin_dir ++ sep ++ "zig");
+    const zigup = "." ++ sep ++ "zig-out" ++ sep ++ "bin" ++ sep ++ "zigup" ++ builtin.target.exeFileExt();
+    const path_link = if (builtin.os.tag == .windows) "scratch\\zig.bat" else (bin_dir ++ sep ++ "zig");
     const zigup_args = &[_][]const u8 { zigup, "--install-dir", install_dir, "--path-link", path_link };
 
     var allocator_store = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -110,6 +111,7 @@ pub fn main() !void {
         try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "HTTP request failed"));
     }
     try testing.expectEqual(@as(u32, 2), try getCompilerCount(install_dir));
+    std.log.info("Success", .{});
 }
 
 fn getCompilerCount(install_dir: []const u8) !u32 {
@@ -121,7 +123,7 @@ fn getCompilerCount(install_dir: []const u8) !u32 {
         if (entry.kind == .Directory) {
             count += 1;
         } else {
-            if (std.builtin.os.tag == .windows) {
+            if (builtin.os.tag == .windows) {
                 try testing.expect(entry.kind == .File);
             } else {
                 try testing.expect(entry.kind == .SymLink);

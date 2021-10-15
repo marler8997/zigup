@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const Builder = std.build.Builder;
 const Pkg = std.build.Pkg;
 
@@ -37,7 +38,7 @@ fn addTests(b: *Builder, target: std.zig.CrossTarget, mode: std.builtin.Mode) vo
         const enum_value = @field(SslBackend, field.name);
         const enabled_by_default =
             if (enum_value == .wolfssl) false
-            else if (enum_value == .schannel and std.builtin.os.tag != .windows) false
+            else if (enum_value == .schannel and builtin.os.tag != .windows) false
             else true;
         addTest(test_step, test_exe, field.name, enabled_by_default);
     }
@@ -114,7 +115,7 @@ pub fn addSslBackend(step: *std.build.LibExeObjStep, backend: SslBackend, ziget_
     switch (backend) {
         .openssl => {
             step.linkSystemLibrary("c");
-            if (std.builtin.os.tag == .windows) {
+            if (builtin.os.tag == .windows) {
                 step.linkSystemLibrary("libcrypto");
                 step.linkSystemLibrary("libssl");
                 try setupOpensslWindows(step);

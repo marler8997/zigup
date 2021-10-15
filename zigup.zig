@@ -1,5 +1,5 @@
 const std = @import("std");
-const builtin = std.builtin;
+const builtin = @import("builtin");
 const mem = std.mem;
 
 const ArrayList = std.ArrayList;
