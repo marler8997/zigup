@@ -2,8 +2,12 @@ const std = @import("std");
 const builtin = @import("builtin");
 const Builder = std.build.Builder;
 const Pkg = std.build.Pkg;
+const GitRepoStep = @import("GitRepoStep.zig");
 
 pub fn build(b: *Builder) !void {
+    // ensure we always support -Dfetch regardless of backend
+    _ = GitRepoStep.defaultFetchOption(b);
+
     const optional_ssl_backend = getSslBackend(b);
 
     const target = b.standardTargetOptions(.{});
@@ -129,17 +133,18 @@ pub fn addSslBackend(step: *std.build.LibExeObjStep, backend: SslBackend, ziget_
             };
         },
         .opensslstatic => {
-            const openssl_repo = try (GitRepo {
+            const openssl_repo = GitRepoStep.create(step.builder, .{
                 .url = "https://github.com/openssl/openssl",
                 .branch = "OpenSSL_1_1_1j",
                 .sha = "52c587d60be67c337364b830dd3fdc15404a2f04",
-            }).resolve(b.allocator);
+            });
 
             // TODO: should we implement something to cache the configuration?
             //       can the configure output be in a different directory?
             {
                 const configure_openssl = std.build.RunStep.create(b, "configure openssl");
-                configure_openssl.cwd = openssl_repo;
+                configure_openssl.step.dependOn(&openssl_repo.step);
+                configure_openssl.cwd = openssl_repo.getPath(&configure_openssl.step);
                 configure_openssl.addArgs(&[_][]const u8 {
                     "./config",
                     // just a temporary path for now
@@ -174,7 +179,7 @@ pub fn addSslBackend(step: *std.build.LibExeObjStep, backend: SslBackend, ziget_
                     .expect_matches = &[_][]const u8 { "OpenSSL has been successfully configured" },
                 };
                 const make_openssl = std.build.RunStep.create(b, "configure openssl");
-                make_openssl.cwd = openssl_repo;
+                make_openssl.cwd = configure_openssl.cwd;
                 make_openssl.addArgs(&[_][]const u8 {
                     "make",
                     "include/openssl/opensslconf.h",
@@ -184,9 +189,13 @@ pub fn addSslBackend(step: *std.build.LibExeObjStep, backend: SslBackend, ziget_
                 make_openssl.step.dependOn(&configure_openssl.step);
                 step.step.dependOn(&make_openssl.step);
             }
-            step.addIncludeDir(openssl_repo);
-            step.addIncludeDir(try std.fs.path.join(b.allocator, &[_][]const u8 { openssl_repo, "include" }));
-            step.addIncludeDir(try std.fs.path.join(b.allocator, &[_][]const u8 { openssl_repo, "crypto", "modes" }));
+
+            const openssl_repo_path_for_step = openssl_repo.getPath(&step.step);
+            step.addIncludeDir(openssl_repo_path_for_step);
+            step.addIncludeDir(try std.fs.path.join(b.allocator, &[_][]const u8 {
+                openssl_repo_path_for_step, "include" }));
+            step.addIncludeDir(try std.fs.path.join(b.allocator, &[_][]const u8 {
+                openssl_repo_path_for_step, "crypto", "modes" }));
             const cflags = &[_][]const u8 {
                 "-Wall",
                 // TODO: is this the right way to do this? is it a config option?
@@ -199,7 +208,8 @@ pub fn addSslBackend(step: *std.build.LibExeObjStep, backend: SslBackend, ziget_
                 var source_lines = std.mem.split(u8, sources, "\n");
                 while (source_lines.next()) |src| {
                     if (src.len == 0 or src[0] == '#') continue;
-                    step.addCSourceFile(try std.fs.path.join(b.allocator, &[_][]const u8 { openssl_repo, src }), cflags);
+                    step.addCSourceFile(try std.fs.path.join(b.allocator, &[_][]const u8 {
+                        openssl_repo_path_for_step, src }), cflags);
                 }
             }
             step.linkLibC();
@@ -213,11 +223,14 @@ pub fn addSslBackend(step: *std.build.LibExeObjStep, backend: SslBackend, ziget_
             std.os.exit(1);
         },
         .iguana => {
-            const iguana_index_file = try (GitRepo {
+            const iguana_repo = GitRepoStep.create(b, .{
                 .url = "https://github.com/marler8997/iguanaTLS",
                 .branch = null,
-                .sha = @embedFile("iguanasha"),
-            }).resolveOneFile(b.allocator, "src" ++ std.fs.path.sep_str ++ "main.zig");
+                .sha = "c1106fa6ecac1d51e8148cd47a8a4b99bb307af8",
+            });
+            step.step.dependOn(&iguana_repo.step);
+            const iguana_repo_path = iguana_repo.getPath(&step.step);
+            const iguana_index_file = try std.fs.path.join(b.allocator, &[_][]const u8 {iguana_repo_path, "src", "main.zig"});
             var p = Pkg {
                 .name = "ssl",
                 .path = .{ .path = try std.fs.path.join(b.allocator, &[_][]const u8 { ziget_repo, "iguana", "ssl.zig" }) },
@@ -234,14 +247,17 @@ pub fn addSslBackend(step: *std.build.LibExeObjStep, backend: SslBackend, ziget_
                 //       I'll probably port this to Zig at some point
                 //       Once I do remove this build config
                 // NOTE: I tested using this commit: 7338760a4a2c6fb80c47b24a2abba32d5fc40635 tagged at version 0.1.42
-                const msspi_repo = try (GitRepo {
+                const msspi_repo = GitRepoStep.create(b, .{
                     .url = "https://github.com/deemru/msspi",
                     .branch = "0.1.42",
                     .sha = "7338760a4a2c6fb80c47b24a2abba32d5fc40635"
-                }).resolve(b.allocator);
-                const msspi_src_dir = try std.fs.path.join(b.allocator, &[_][]const u8 { msspi_repo, "src" });
+                });
+                step.step.dependOn(&msspi_repo.step);
+                const msspi_repo_path = msspi_repo.getPath(&step.step);
+
+                const msspi_src_dir = try std.fs.path.join(b.allocator, &[_][]const u8 { msspi_repo_path, "src" });
                 const msspi_main_cpp = try std.fs.path.join(b.allocator, &[_][]const u8 { msspi_src_dir, "msspi.cpp" });
-                const msspi_third_party_include = try std.fs.path.join(b.allocator, &[_][]const u8 { msspi_repo, "third_party", "cprocsp", "include" });
+                const msspi_third_party_include = try std.fs.path.join(b.allocator, &[_][]const u8 { msspi_repo_path, "third_party", "cprocsp", "include" });
                 step.addCSourceFile(msspi_main_cpp, &[_][]const u8 { });
                 step.addIncludeDir(msspi_src_dir);
                 step.addIncludeDir(msspi_third_party_include);
@@ -287,51 +303,3 @@ pub fn setupOpensslWindows(step: *std.build.LibExeObjStep) !void {
         );
     }
 }
-
-pub const GitRepo = struct {
-    url: []const u8,
-    branch: ?[]const u8,
-    sha: []const u8,
-    path: ?[]const u8 = null,
-
-    pub fn defaultReposDir(allocator: *std.mem.Allocator) ![]const u8 {
-        const cwd = try std.process.getCwdAlloc(allocator);
-        defer allocator.free(cwd);
-        return try std.fs.path.join(allocator, &[_][]const u8 { cwd, "dep" });
-    }
-
-    pub fn resolve(self: GitRepo, allocator: *std.mem.Allocator) ![]const u8 {
-        var optional_repos_dir_to_clean: ?[]const u8 = null;
-        defer {
-            if (optional_repos_dir_to_clean) |p| {
-                allocator.free(p);
-            }
-        }
-
-        const path = if (self.path) |p| try allocator.dupe(u8, p) else blk: {
-            const repos_dir = try defaultReposDir(allocator);
-            optional_repos_dir_to_clean = repos_dir;
-            break :blk try std.fs.path.join(allocator, &[_][]const u8{ repos_dir, std.fs.path.basename(self.url) });
-        };
-        errdefer allocator.free(path);
-
-        std.fs.accessAbsolute(path, std.fs.File.OpenFlags { .read = true }) catch {
-            std.debug.print("Error: repository '{s}' does not exist\n", .{path});
-            std.debug.print("       Run the following to clone it:\n", .{});
-            const branch_args = if (self.branch) |b| &[2][]const u8 {" -b ", b} else &[2][]const u8 {"", ""};
-            std.debug.print("       git clone {s}{s}{s} {s} && git -C {3s} checkout {s} -b for_ziget\n",
-                .{self.url, branch_args[0], branch_args[1], path, self.sha});
-            std.os.exit(1);
-        };
-
-        // TODO: check if the SHA matches an print a message and/or warning if it is different
-
-        return path;
-    }
-
-    pub fn resolveOneFile(self: GitRepo, allocator: *std.mem.Allocator, index_sub_path: []const u8) ![]const u8 {
-        const repo_path = try self.resolve(allocator);
-        defer allocator.free(repo_path);
-        return try std.fs.path.join(allocator, &[_][]const u8 { repo_path, index_sub_path });
-    }
-};

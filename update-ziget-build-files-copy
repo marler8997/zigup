@@ -13,7 +13,7 @@ fi
 
 rm -rf ziget-build-files-copy
 
-for f in build.zig iguanasha openssl/sources; do
+for f in build.zig GitRepoStep.zig openssl/sources; do
     dir=$(dirname $f)
     mkdir -p ziget-build-files-copy/$dir
     cp dep/ziget/$f ziget-build-files-copy/$dir

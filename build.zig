@@ -3,6 +3,8 @@ const builtin = @import("builtin");
 const Builder = std.build.Builder;
 const Pkg = std.build.Pkg;
 
+const GitRepoStep = @import("ziget-build-files-copy/GitRepoStep.zig");
+
 const zigetbuild = @import("ziget-build-files-copy/build.zig");
 // TODO: use this if/when we get @tryImport
 //const SslBackend = if (zigetbuild) zigetbuild.SslBackend else enum {};
@@ -14,11 +16,11 @@ fn unwrapOptionalBool(optionalBool: ?bool) bool {
 }
 
 pub fn build(b: *Builder) !void {
-    const ziget_repo = try (GitRepo {
+    const ziget_repo = GitRepoStep.create(b, .{
         .url = "https://github.com/marler8997/ziget",
         .branch = null,
-        .sha = @embedFile("zigetsha"),
-    }).resolve(b.allocator);
+        .sha = "4ae949f2e1ae701a3c16e9cc1aeb0355fea4cffd",
+    });
 
     // TODO: implement this if/when we get @tryImport
     //if (zigetbuild) |_| { } else {
@@ -61,7 +63,13 @@ fn addTest(b: *Builder, exe: *std.build.LibExeObjStep, target: std.zig.CrossTarg
     test_step.dependOn(&run_cmd.step);
 }
 
-fn addZigupExe(b: *Builder, ziget_repo: []const u8, target: std.zig.CrossTarget, mode: std.builtin.Mode, ssl_backend: ?SslBackend) !*std.build.LibExeObjStep {
+fn addZigupExe(
+    b: *Builder,
+    ziget_repo: *GitRepoStep,
+    target: std.zig.CrossTarget,
+    mode: std.builtin.Mode,
+    ssl_backend: ?SslBackend
+) !*std.build.LibExeObjStep {
     const require_ssl_backend = b.allocator.create(RequireSslBackendStep) catch unreachable;
     require_ssl_backend.* = RequireSslBackendStep.init(b, "the zigup exe", ssl_backend);
 
@@ -71,7 +79,7 @@ fn addZigupExe(b: *Builder, ziget_repo: []const u8, target: std.zig.CrossTarget,
 
     const ziget_ssl_pkg = blk: {
         if (ssl_backend) |backend| {
-            break :blk zigetbuild.addSslBackend(exe, backend, ziget_repo) catch {
+            break :blk zigetbuild.addSslBackend(exe, backend, ziget_repo.path) catch {
                 const ssl_backend_failed = b.allocator.create(SslBackendFailedStep) catch unreachable;
                 ssl_backend_failed.* = SslBackendFailedStep.init(b, "the zigup exe", backend);
                 break :blk Pkg {
@@ -85,21 +93,27 @@ fn addZigupExe(b: *Builder, ziget_repo: []const u8, target: std.zig.CrossTarget,
             .path = .{ .path = "no-ssl-backend-configured.zig" },
         };
     };
-    exe.addPackage(Pkg {
-        .name = "ziget",
-        .path = .{ .path = try join(b, &[_][]const u8 { ziget_repo, "ziget.zig" }) },
-        .dependencies = &[_]Pkg {ziget_ssl_pkg},
-    });
+    exe.step.dependOn(&ziget_repo.step);
+    {
+        const ziget_repo_path = ziget_repo.getPath(&exe.step);
+        exe.addPackage(Pkg {
+            .name = "ziget",
+            .path = .{ .path = try join(b, &[_][]const u8 { ziget_repo_path, "ziget.zig" }) },
+            .dependencies = &[_]Pkg {ziget_ssl_pkg},
+        });
+    }
 
     if (targetIsWindows(target)) {
-        const zarc_repo = try (GitRepo {
+        const zarc_repo = GitRepoStep.create(b, .{
             .url = "https://github.com/SuperAuguste/zarc",
             .branch = null,
-            .sha = @embedFile("zarcsha"),
-        }).resolve(b.allocator);
+            .sha = "accc35c0bf190d55133cc689cf989c03bf853349",
+        });
+        exe.step.dependOn(&zarc_repo.step);
+        const zarc_repo_path = zarc_repo.getPath(&exe.step);
         exe.addPackage(Pkg {
             .name = "zarc",
-            .path = .{ .path = try join(b, &[_][]const u8 { zarc_repo, "src", "main.zig" }) },
+            .path = .{ .path = try join(b, &[_][]const u8 { zarc_repo_path, "src", "main.zig" }) },
         });
     }
 
@@ -171,51 +185,3 @@ fn addGithubReleaseExe(b: *Builder, github_release_step: *std.build.Step, ziget_
 fn join(b: *Builder, parts: []const []const u8) ![]const u8 {
     return try std.fs.path.join(b.allocator, parts);
 }
-
-pub const GitRepo = struct {
-    url: []const u8,
-    branch: ?[]const u8,
-    sha: []const u8,
-    path: ?[]const u8 = null,
-
-    pub fn defaultReposDir(allocator: *std.mem.Allocator) ![]const u8 {
-        const cwd = try std.process.getCwdAlloc(allocator);
-        defer allocator.free(cwd);
-        return try std.fs.path.join(allocator, &[_][]const u8 { cwd, "dep" });
-    }
-
-    pub fn resolve(self: GitRepo, allocator: *std.mem.Allocator) ![]const u8 {
-        var optional_repos_dir_to_clean: ?[]const u8 = null;
-        defer {
-            if (optional_repos_dir_to_clean) |p| {
-                allocator.free(p);
-            }
-        }
-
-        const path = if (self.path) |p| try allocator.dupe(u8, p) else blk: {
-            const repos_dir = try defaultReposDir(allocator);
-            optional_repos_dir_to_clean = repos_dir;
-            break :blk try std.fs.path.join(allocator, &[_][]const u8{ repos_dir, std.fs.path.basename(self.url) });
-        };
-        errdefer self.allocator.free(path);
-
-        std.fs.accessAbsolute(path, std.fs.File.OpenFlags { .read = true }) catch {
-            std.debug.print("Error: repository '{s}' does not exist\n", .{path});
-            std.debug.print("       Run the following to clone it:\n", .{});
-            const branch_args = if (self.branch) |b| &[2][]const u8 {" -b ", b} else &[2][]const u8 {"", ""};
-            std.debug.print("       git clone {s}{s}{s} {s} && git -C {3s} checkout {s} -b for_zigup\n",
-                .{self.url, branch_args[0], branch_args[1], path, self.sha});
-            std.os.exit(1);
-        };
-
-        // TODO: check if the SHA matches an print a message and/or warning if it is different
-
-        return path;
-    }
-
-    pub fn resolveOneFile(self: GitRepo, allocator: *std.mem.Allocator, index_sub_path: []const u8) ![]const u8 {
-        const repo_path = try self.resolve(allocator);
-        defer allocator.free(repo_path);
-        return try std.fs.path.join(allocator, &[_][]const u8 { repo_path, index_sub_path });
-    }
-};
