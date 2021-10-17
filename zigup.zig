@@ -90,8 +90,8 @@ fn ignoreHttpCallback(request: []const u8) void { _ = request; }
 
 fn getHomeDir() ![]const u8 {
     if (builtin.os.tag == .windows) {
-        // TODO: replace with something else
-        return "C:\\tools";
+        // by default on Windows, put install link and compilers in same directory as zigup
+        return try std.fs.selfExeDirPathAlloc(std.heap.page_allocator);
     }
     return std.os.getenv("HOME") orelse {
         std.debug.print("Error: cannot find install directory, $HOME environment variable is not set\n", .{});
