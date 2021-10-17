@@ -63,15 +63,17 @@ My breakdown of the operations I'd like.
 
 > NOTE: by default `zigup list` should display more information, like release date, its "keep" value, etc.  Maybe it should also sort them, probably by release date?
 
-# Building
+# Dependencies
 
-* Depends on https://github.com/marler8997/ziget.  `build.zig` assumes it exists alongside this repository.
-* Currently depends on openssl.  On linux make sure your environment is able to find openssl.  On windows, see https://github.com/marler8997/ziget#openssl-on-windows
-* On linux, uses `tar` to extract archives
+zigup depends on https://github.com/marler8997/ziget which in turn depends on other projects depending on which SSL backend is selected.  You can provide `-Dfetch` to `zig build` to automatically clone all repository dependencies, otherwise, the build will report a missing dependency error with an explanation of how to clone it.
+
+On linux and macos, zigup depends on `tar` to extract the compiler archive files (this may change in the future).
+
+# Building
 
 ```
 zig build
 
 # install to a bin directory with
-cp zig-cache/bin/zigup BIN_PATH
+cp zig-out/bin/zigup BIN_PATH
 ```
