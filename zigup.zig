@@ -683,15 +683,14 @@ fn installCompiler(allocator: *Allocator, compiler_dir: []const u8, url: []const
 
                     var installing_dir_opened = try std.fs.openDirAbsolute(installing_dir, .{});
                     defer installing_dir_opened.close();
-
-                    var archive_file = try std.fs.openFileAbsolute(archive_absolute, .{});
-                    defer archive_file.close();
-                    var archive = zarc.zip.Parser(std.fs.File.Reader).init(allocator, archive_file.reader());
-                    defer archive.deinit();
                     std.debug.print("extracting archive to \"{s}\"\n", .{installing_dir});
                     var timer = try std.time.Timer.start();
-                    try archive.load();
-                    _ = try archive.extract(installing_dir_opened, .{});
+                    var archive_file = try std.fs.openFileAbsolute(archive_absolute, .{});
+                    defer archive_file.close();
+                    const reader = archive_file.reader();
+                    var archive = try zarc.zip.load(allocator, reader);
+                    defer archive.deinit(allocator);
+                    _ = try archive.extract(reader, installing_dir_opened, .{});
                     const time = timer.read();
                     std.debug.print("extracted archive in {d:.2} s\n", .{@intToFloat(f32, time) / @intToFloat(f32, std.time.ns_per_s)});
                 }
