@@ -1,3 +1,6 @@
+//! Publish Date: 2021_10_17
+//! This file is hosted at github.com/marler8997/zig-build-repos and is meant to be copied
+//! to projects that use it.
 const std = @import("std");
 const GitRepoStep = @This();
 

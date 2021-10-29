@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const Builder = std.build.Builder;
 const Pkg = std.build.Pkg;
 const GitRepoStep = @import("GitRepoStep.zig");
+const loggyrunstep = @import("loggyrunstep.zig");
 
 pub fn build(b: *Builder) !void {
     // ensure we always support -Dfetch regardless of backend
@@ -29,39 +30,98 @@ pub fn build(b: *Builder) !void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    addTests(b, target, mode);
+    addTests(b);
 }
 
-fn addTests(b: *Builder, target: std.zig.CrossTarget, mode: std.builtin.Mode) void {
-    const test_exe = b.addExecutable("test", "test.zig");
-    test_exe.setTarget(target);
-    test_exe.setBuildMode(mode);
-
+fn addTests(b: *Builder) void {
     const test_step = b.step("test", "Run all the 'Enabled' tests");
     inline for (ssl_backends) |field| {
         const enum_value = @field(SslBackend, field.name);
-        const enabled_by_default =
-            if (enum_value == .wolfssl) false
-            else if (enum_value == .schannel and builtin.os.tag != .windows) false
-            else true;
-        addTest(test_step, test_exe, field.name, enabled_by_default);
+        const enabled_by_default = switch (enum_value) {
+            .iguana => true,
+            .wolfssl => false, // wolfssl not supported yet
+            .schannel => false, // schannel not supported yet
+            .opensslstatic => (
+                   builtin.os.tag == .linux
+                // or builtin.os.tag == .macos (not working yet, I think config is not working)
+            ),
+            .openssl => (
+                   builtin.os.tag == .linux
+                // or builtin.os.tag == .macos (not working yet, not sure why)
+            ),
+        };
+        addTest(b, test_step, field.name, enabled_by_default);
     }
-    addTest(test_step, test_exe, "nossl", true);
+    addTest(b, test_step, "nossl", true);
 }
 
-fn addTest(test_step: *std.build.Step, test_exe: *std.build.LibExeObjStep, comptime backend_name: []const u8, comptime enabled_by_default: bool) void {
-    const b = test_exe.builder;
-    const run_cmd = test_exe.run();
-    run_cmd.addArg(backend_name);
-    run_cmd.step.dependOn(b.getInstallStep());
+fn addTest(
+    b: *Builder,
+    default_test_step: *std.build.Step,
+    comptime backend_name: []const u8,
+    enabled_by_default: bool,
+) void {
+    const prefix = b.pathFromRoot("zig-out" ++ std.fs.path.sep_str ++ backend_name);
+    const nossl = std.mem.eql(u8, backend_name, "nossl");
+    const build_backend = b.addSystemCommand(&[_][]const u8 {
+        b.zig_exe,
+        "build",
+        "--prefix",
+        prefix,
+    });
+    if (!nossl) {
+        build_backend.addArg("-D" ++ backend_name);
+    }
+    if (GitRepoStep.defaultFetchOption(b)) {
+        build_backend.addArg("-Dfetch");
+    }
+    loggyrunstep.enable(build_backend);
 
-    const enabled_prefix = if (enabled_by_default) "Enabled " else "Disabled";
-    const test_backend_step = b.step("test-" ++ backend_name,
-        enabled_prefix ++ ": test ziget with the '" ++ backend_name ++ "' ssl backend");
-    test_backend_step.dependOn(&run_cmd.step);
+    const ziget_exe_basename = if (builtin.os.tag == .windows) "ziget.exe" else "ziget";
+    const ziget_exe = std.fs.path.join(b.allocator, &[_][]const u8 { prefix, "bin", ziget_exe_basename }) catch unreachable;
 
+    const test_backend_step = b.step("test-" ++ backend_name, "Test the " ++ backend_name ++ " backend");
+    if (nossl) {
+        const test_google = b.addSystemCommand(&[_][]const u8 {
+            ziget_exe,
+            "google.com",
+        });
+        loggyrunstep.enable(test_google);
+        test_google.step.dependOn(&build_backend.step);
+        test_backend_step.dependOn(&test_google.step);
+    }
+    {
+        const test_google = b.addSystemCommand(&[_][]const u8 {
+            ziget_exe,
+            "http://google.com",
+        });
+        loggyrunstep.enable(test_google);
+        test_google.step.dependOn(&build_backend.step);
+        test_backend_step.dependOn(&test_google.step);
+    }
+
+    if (!nossl) {
+        {
+            const test_ziglang = b.addSystemCommand(&[_][]const u8 {
+                ziget_exe,
+                "http://ziglang.org", // NOTE: ziglang.org will redirect to HTTPS
+            });
+            loggyrunstep.enable(test_ziglang);
+            test_ziglang.step.dependOn(&build_backend.step);
+            test_backend_step.dependOn(&test_ziglang.step);
+        }
+        {
+            const test_ziglang = b.addSystemCommand(&[_][]const u8 {
+                ziget_exe,
+                "https://ziglang.org",
+            });
+            loggyrunstep.enable(test_ziglang);
+            test_ziglang.step.dependOn(&build_backend.step);
+            test_backend_step.dependOn(&test_ziglang.step);
+        }
+    }
     if (enabled_by_default) {
-        test_step.dependOn(&run_cmd.step);
+        default_test_step.dependOn(test_backend_step);
     }
 }
 
@@ -226,7 +286,7 @@ pub fn addSslBackend(step: *std.build.LibExeObjStep, backend: SslBackend, ziget_
             const iguana_repo = GitRepoStep.create(b, .{
                 .url = "https://github.com/marler8997/iguanaTLS",
                 .branch = null,
-                .sha = "c1106fa6ecac1d51e8148cd47a8a4b99bb307af8",
+                .sha = "f997c1085470f2414a4bbc50ea170e1da82058ab",
             });
             step.step.dependOn(&iguana_repo.step);
             const iguana_repo_path = iguana_repo.getPath(&step.step);
@@ -281,9 +341,29 @@ pub fn addSslBackend(step: *std.build.LibExeObjStep, backend: SslBackend, ziget_
     }
 }
 
+const OpensslPathOption = struct {
+    // NOTE: I can't use ??[]const u8 because it exposes a bug in the compiler
+    is_cached: bool = false,
+    cached: ?[]const u8 = undefined,
+    fn get(self: *OpensslPathOption, b: *std.build.Builder) ?[]const u8 {
+        if (!self.is_cached) {
+            self.cached = b.option(
+                []const u8,
+                "openssl-path",
+                "path to openssl (for Windows)",
+            );
+            self.is_cached = true;
+        }
+        std.debug.assert(self.is_cached);
+        return self.cached;
+    }
+};
+var global_openssl_path_option = OpensslPathOption { };
+
 pub fn setupOpensslWindows(step: *std.build.LibExeObjStep) !void {
     const b = step.builder;
-    const openssl_path = b.option([]const u8, "openssl-path", "path to openssl (for Windows)") orelse {
+
+    const openssl_path = global_openssl_path_option.get(b) orelse {
         std.debug.print("Error: -Dopenssl on windows requires -Dopenssl-path=DIR to be specified\n", .{});
         std.os.exit(1);
     };

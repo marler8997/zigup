@@ -19,7 +19,7 @@ pub fn build(b: *Builder) !void {
     const ziget_repo = GitRepoStep.create(b, .{
         .url = "https://github.com/marler8997/ziget",
         .branch = null,
-        .sha = "4ae949f2e1ae701a3c16e9cc1aeb0355fea4cffd",
+        .sha = "a9567dccd2b114d5d8140ae2bd4c14023769b7ca",
     });
 
     // TODO: implement this if/when we get @tryImport
