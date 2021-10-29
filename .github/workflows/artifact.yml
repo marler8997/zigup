@@ -13,7 +13,7 @@ jobs:
         with:
           version: 0.9.0-dev.1524+d2f9646d9
       - run: |
-          zig build test -Dfetch -Diguana -Dcpu=baseline
+          zig build test -Dfetch
         shell: bash
       - uses: actions/upload-artifact@v2
         with:

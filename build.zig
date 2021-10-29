@@ -19,7 +19,7 @@ pub fn build(b: *Builder) !void {
     const ziget_repo = GitRepoStep.create(b, .{
         .url = "https://github.com/marler8997/ziget",
         .branch = null,
-        .sha = "a9567dccd2b114d5d8140ae2bd4c14023769b7ca",
+        .sha = "0b43c12a395b67326f5f60dd593a2eea745178c2",
     });
 
     // TODO: implement this if/when we get @tryImport
@@ -33,10 +33,10 @@ pub fn build(b: *Builder) !void {
     //       having the iguana repo copied into this one
     //try addGithubReleaseExe(b, github_release_step, ziget_repo, "x86_64-linux", SslBackend.iguana);
 
-    const ssl_backend = zigetbuild.getSslBackend(b);
     const target = b.standardTargetOptions(.{});
     const mode = b.standardReleaseOptions();
-    const exe = try addZigupExe(b, ziget_repo, target, mode, ssl_backend);
+    // TODO: Maybe add more executables with different ssl backends
+    const exe = try addZigupExe(b, ziget_repo, target, mode, zigetbuild.SslBackend.iguana);
     exe.install();
 
     const run_cmd = exe.run();
@@ -77,31 +77,8 @@ fn addZigupExe(
     exe.setTarget(target);
     exe.setBuildMode(mode);
 
-    const ziget_ssl_pkg = blk: {
-        if (ssl_backend) |backend| {
-            break :blk zigetbuild.addSslBackend(exe, backend, ziget_repo.path) catch {
-                const ssl_backend_failed = b.allocator.create(SslBackendFailedStep) catch unreachable;
-                ssl_backend_failed.* = SslBackendFailedStep.init(b, "the zigup exe", backend);
-                break :blk Pkg {
-                    .name = "missing-ssl-backend-files",
-                    .path = .{ .path = "missing-ssl-backend-files.zig" },
-                };
-            };
-        }
-        break :blk Pkg {
-            .name = "no-ssl-backend-configured",
-            .path = .{ .path = "no-ssl-backend-configured.zig" },
-        };
-    };
     exe.step.dependOn(&ziget_repo.step);
-    {
-        const ziget_repo_path = ziget_repo.getPath(&exe.step);
-        exe.addPackage(Pkg {
-            .name = "ziget",
-            .path = .{ .path = try join(b, &[_][]const u8 { ziget_repo_path, "ziget.zig" }) },
-            .dependencies = &[_]Pkg {ziget_ssl_pkg},
-        });
-    }
+    zigetbuild.addZigetPkg(exe, ssl_backend, ziget_repo.getPath(&exe.step));
 
     if (targetIsWindows(target)) {
         const zarc_repo = GitRepoStep.create(b, .{
