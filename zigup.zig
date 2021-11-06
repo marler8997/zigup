@@ -295,7 +295,7 @@ pub fn main2() !u8 {
             if (std.mem.eql(u8, version_string, "master")) {
                 @panic("set default to master not implemented");
             } else {
-                try setDefaultCompiler(allocator, compiler_dir);
+                try setDefaultCompiler(allocator, compiler_dir, .verify_existence);
             }
             return 0;
         }
@@ -356,7 +356,7 @@ fn fetchCompiler(allocator: *Allocator, version_arg: []const u8, set_default: Se
         }
     }
     if (set_default == .set_default) {
-        try setDefaultCompiler(allocator, compiler_dir);
+        try setDefaultCompiler(allocator, compiler_dir, .existence_verified);
     }
 }
 
@@ -623,7 +623,22 @@ fn printDefaultCompiler(allocator: *Allocator) !void {
     }
 }
 
-fn setDefaultCompiler(allocator: *Allocator, compiler_dir: []const u8) !void {
+const ExistVerify = enum { existence_verified, verify_existence };
+
+fn setDefaultCompiler(allocator: *Allocator, compiler_dir: []const u8, exist_verify: ExistVerify) !void {
+    switch (exist_verify) {
+        .existence_verified => {},
+        .verify_existence => {
+            (std.fs.openDirAbsolute(compiler_dir, .{}) catch |err| switch (err) {
+                error.FileNotFound => {
+                    std.debug.print("Error: compiler '{s}' is not installed\n", .{std.fs.path.basename(compiler_dir)});
+                    return error.AlreadyReported;
+                },
+                else => |e| return e,
+            }).close();
+        },
+    }
+
     const path_link = try makeZigPathLinkString(allocator);
     defer allocator.free(path_link);
     const link_target = try std.fs.path.join(allocator, &[_][]const u8{ compiler_dir, "files", "zig" ++ builtin.target.exeFileExt() });

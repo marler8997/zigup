@@ -47,6 +47,16 @@ pub fn main() !void {
         try passOrDumpAndThrow(result);
         try testing.expect(std.mem.containsAtLeast(u8, result.stdout, 1, "master"));
     }
+    {
+        const result = try runCaptureOuts(allocator, ".", zigup_args ++ &[_][]const u8 {"default", "0.5.0"});
+        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        dumpExecResult(result);
+        switch (result.term) {
+            .Exited => |code| try testing.expectEqual(@as(u8, 1), code),
+            else => |term| std.debug.panic("unexpected exit {}", .{term}),
+        }
+        try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "Error: compiler '0.5.0' is not installed\n"));
+    }
     try runNoCapture(".", zigup_args ++ &[_][]const u8 {"0.5.0"});
     {
         const result = try runCaptureOuts(allocator, ".", zigup_args ++ &[_][]const u8 {"default"});
