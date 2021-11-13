@@ -292,11 +292,7 @@ pub fn main2() !u8 {
             defer allocator.free(install_dir);
             const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, version_string });
             defer allocator.free(compiler_dir);
-            if (std.mem.eql(u8, version_string, "master")) {
-                @panic("set default to master not implemented");
-            } else {
-                try setDefaultCompiler(allocator, compiler_dir, .verify_existence);
-            }
+            try setDefaultCompiler(allocator, compiler_dir, .verify_existence);
             return 0;
         }
         std.debug.print("Error: 'default' command requires 1 or 2 arguments but got {d}\n", .{args.len - 1});
