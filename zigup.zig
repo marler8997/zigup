@@ -458,6 +458,12 @@ fn listCompilers(allocator: Allocator) !void {
     };
     defer install_dir.close();
 
+    const default_compiler = try getDefaultCompiler(allocator);
+    defer if (default_compiler) |default| allocator.free(default);
+
+    const master_dir = try getMasterDir(allocator, &install_dir);
+    defer if (master_dir) |master| allocator.free(master);
+
     const stdout = std.io.getStdOut().writer();
     {
         var it = install_dir.iterate();
@@ -466,7 +472,24 @@ fn listCompilers(allocator: Allocator) !void {
                 continue;
             if (std.mem.endsWith(u8, entry.name, ".installing"))
                 continue;
-            try stdout.print("{s}\n", .{entry.name});
+
+            try stdout.print("{s}", .{entry.name});
+
+            const is_master = if (master_dir) |master|
+                (if (mem.eql(u8, master, entry.name)) true else false)
+                else false;
+
+            if (is_master) {
+                try stdout.writeAll(" -> master");
+            }
+
+            if (default_compiler) |default| {
+                if (mem.eql(u8, default, entry.name) or (is_master and mem.eql(u8, default, "master"))) {
+                    try stdout.writeAll(" (default)");
+                }
+            }
+
+            try stdout.writeByte('\n');
         }
     }
 }
@@ -604,7 +627,26 @@ fn printDefaultCompiler(allocator: Allocator) !void {
     defer if (default_compiler_opt) |default_compiler| allocator.free(default_compiler);
     const stdout = std.io.getStdOut().writer();
     if (default_compiler_opt) |default_compiler| {
-        try stdout.print("{s}\n", .{default_compiler});
+        if (mem.eql(u8, default_compiler, "master")) {
+            const install_dir_string = try getInstallDir(allocator, .{ .create = false });
+            defer allocator.free(install_dir_string);
+
+            var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
+                error.FileNotFound => return,
+                else => return e,
+            };
+            defer install_dir.close();
+
+            const master_dir = try getMasterDir(allocator, &install_dir);
+            defer if (master_dir) |master| allocator.free(master);
+
+            if (master_dir) |master| {
+                try stdout.print("master -> {s}\n", .{master});
+            }
+        }
+        else {
+            try stdout.print("{s}\n", .{default_compiler});
+        }
     } else {
         try stdout.writeAll("<no-default>\n");
     }
