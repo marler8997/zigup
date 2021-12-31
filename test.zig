@@ -22,7 +22,7 @@ pub fn main() !void {
 
     var allocator_store = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer allocator_store.deinit();
-    const allocator = &allocator_store.allocator;
+    const allocator = allocator_store.allocator();
 
     {
         const result = try runCaptureOuts(allocator, ".", zigup_args ++ &[_][]const u8 {"-h"});
@@ -160,11 +160,11 @@ fn dumpExecResult(result: std.ChildProcess.ExecResult) void {
 fn runNoCapture(cwd: []const u8, argv: []const []const u8) !void {
     var arena_store = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena_store.deinit();
-    const result = try runCaptureOuts(&arena_store.allocator, cwd, argv);
+    const result = try runCaptureOuts(arena_store.allocator(), cwd, argv);
     dumpExecResult(result);
     try passOrThrow(result.term);
 }
-fn runCaptureOuts(allocator: *std.mem.Allocator, cwd: []const u8, argv: []const []const u8) !std.ChildProcess.ExecResult {
+fn runCaptureOuts(allocator: std.mem.Allocator, cwd: []const u8, argv: []const []const u8) !std.ChildProcess.ExecResult {
     {
         const cmd = try std.mem.join(allocator, " ", argv);
         defer allocator.free(cmd);

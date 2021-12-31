@@ -19,7 +19,7 @@ pub fn build(b: *Builder) !void {
     const ziget_repo = GitRepoStep.create(b, .{
         .url = "https://github.com/marler8997/ziget",
         .branch = null,
-        .sha = "0b43c12a395b67326f5f60dd593a2eea745178c2",
+        .sha = @embedFile("zigetsha"),
     });
 
     // TODO: implement this if/when we get @tryImport
@@ -82,9 +82,9 @@ fn addZigupExe(
 
     if (targetIsWindows(target)) {
         const zarc_repo = GitRepoStep.create(b, .{
-            .url = "https://github.com/SuperAuguste/zarc",
-            .branch = null,
-            .sha = "2a8fd27baa781b9de821b1b4e0b89283413054b8",
+            .url = "https://github.com/marler8997/zarc",
+            .branch = "protected",
+            .sha = "f66a05a50c71e17ee74fa13047f84002fb5cd6a0",
         });
         exe.step.dependOn(&zarc_repo.step);
         const zarc_repo_path = zarc_repo.getPath(&exe.step);

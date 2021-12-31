@@ -22,7 +22,7 @@ fn buildOrFail(b: *Builder) anyerror {
     const ziget_repo = GitRepoStep.create(b, .{
         .url = "https://github.com/marler8997/ziget",
         .branch = null,
-        .sha = "0b43c12a395b67326f5f60dd593a2eea745178c2",
+        .sha = @embedFile("zigetsha"),
     });
     const build2 = addBuild(b, .{ .path = "build2.zig" }, .{});
     build2.addArgs(try getBuildArgs(b));
