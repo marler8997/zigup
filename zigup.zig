@@ -10,12 +10,12 @@ const zarc = @import("zarc");
 
 const fixdeletetree = @import("fixdeletetree.zig");
 
-const arch = switch(builtin.cpu.arch) {
+const arch = switch (builtin.cpu.arch) {
     .x86_64 => "x86_64",
     .aarch64 => "aarch64",
     else => @compileError("Unsupported CPU Architecture"),
 };
-const os = switch(builtin.os.tag) {
+const os = switch (builtin.os.tag) {
     .windows => "windows",
     .linux => "linux",
     .macos => "macos",
@@ -28,7 +28,7 @@ const archive_ext = if (builtin.os.tag == .windows) "zip" else "tar.xz";
 var global_optional_install_dir: ?[]const u8 = null;
 var global_optional_path_link: ?[]const u8 = null;
 
-//fn find_zigs(allocator: *Allocator) !?[][]u8 {
+//fn find_zigs(allocator: Allocator) !?[][]u8 {
 //    // don't worry about free for now, this is a short lived program
 //
 //    if (builtin.os.tag == .windows) {
@@ -54,7 +54,7 @@ var global_optional_path_link: ?[]const u8 = null;
 //    @panic("not impl");
 //}
 
-fn download(allocator: *Allocator, url: []const u8, writer: anytype) !void {
+fn download(allocator: Allocator, url: []const u8, writer: anytype) !void {
     var download_options = ziget.request.DownloadOptions{
         .flags = 0,
         .allocator = allocator,
@@ -73,20 +73,22 @@ fn download(allocator: *Allocator, url: []const u8, writer: anytype) !void {
     );
 }
 
-fn downloadToFileAbsolute(allocator: *Allocator, url: []const u8, file_absolute: []const u8) !void {
+fn downloadToFileAbsolute(allocator: Allocator, url: []const u8, file_absolute: []const u8) !void {
     const file = try std.fs.createFileAbsolute(file_absolute, .{});
     defer file.close();
     try download(allocator, url, file.writer());
 }
 
-fn downloadToString(allocator: *Allocator, url: []const u8) ![]u8 {
+fn downloadToString(allocator: Allocator, url: []const u8) ![]u8 {
     var response_array_list = try ArrayList(u8).initCapacity(allocator, 20 * 1024); // 20 KB (modify if response is expected to be bigger)
     errdefer response_array_list.deinit();
     try download(allocator, url, response_array_list.writer());
     return response_array_list.toOwnedSlice();
 }
 
-fn ignoreHttpCallback(request: []const u8) void { _ = request; }
+fn ignoreHttpCallback(request: []const u8) void {
+    _ = request;
+}
 
 fn getHomeDir() ![]const u8 {
     if (builtin.os.tag == .windows) {
@@ -99,7 +101,7 @@ fn getHomeDir() ![]const u8 {
     };
 }
 
-fn allocInstallDirString(allocator: *Allocator) ![]const u8 {
+fn allocInstallDirString(allocator: Allocator) ![]const u8 {
     // TODO: maybe support ZIG_INSTALL_DIR environment variable?
     // TODO: maybe support a file on the filesystem to configure install dir?
     const home = try getHomeDir();
@@ -112,7 +114,7 @@ fn allocInstallDirString(allocator: *Allocator) ![]const u8 {
 const GetInstallDirOptions = struct {
     create: bool,
 };
-fn getInstallDir(allocator: *Allocator, options: GetInstallDirOptions) ![]const u8 {
+fn getInstallDir(allocator: Allocator, options: GetInstallDirOptions) ![]const u8 {
     var optional_dir_to_free_on_error: ?[]const u8 = null;
     errdefer if (optional_dir_to_free_on_error) |dir| allocator.free(dir);
 
@@ -132,7 +134,7 @@ fn getInstallDir(allocator: *Allocator, options: GetInstallDirOptions) ![]const 
     return install_dir;
 }
 
-fn makeZigPathLinkString(allocator: *Allocator) ![]const u8 {
+fn makeZigPathLinkString(allocator: Allocator) ![]const u8 {
     if (global_optional_path_link) |path| return path;
 
     // for now we're just going to hardcode the path to $HOME/bin/zig
@@ -144,7 +146,7 @@ fn makeZigPathLinkString(allocator: *Allocator) ![]const u8 {
 }
 
 // TODO: this should be in standard lib
-fn toAbsolute(allocator: *Allocator, path: []const u8) ![]u8 {
+fn toAbsolute(allocator: Allocator, path: []const u8) ![]u8 {
     std.debug.assert(!std.fs.path.isAbsolute(path));
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
@@ -198,7 +200,7 @@ pub fn main2() !u8 {
     }
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    const allocator = &arena.allocator;
+    const allocator = arena.allocator();
 
     const args_array = try std.process.argsAlloc(allocator);
     // no need to free, os will do it
@@ -316,7 +318,7 @@ pub fn main2() !u8 {
 
 const SetDefault = enum { set_default, leave_default };
 
-fn fetchCompiler(allocator: *Allocator, version_arg: []const u8, set_default: SetDefault) !void {
+fn fetchCompiler(allocator: Allocator, version_arg: []const u8, set_default: SetDefault) !void {
     const install_dir = try getInstallDir(allocator, .{ .create = true });
     defer allocator.free(install_dir);
 
@@ -365,13 +367,13 @@ const download_index_url = "https://ziglang.org/download/index.json";
 const DownloadIndex = struct {
     text: []u8,
     json: std.json.ValueTree,
-    pub fn deinit(self: *DownloadIndex, allocator: *Allocator) void {
+    pub fn deinit(self: *DownloadIndex, allocator: Allocator) void {
         self.json.deinit();
         allocator.free(self.text);
     }
 };
 
-fn fetchDownloadIndex(allocator: *Allocator) !DownloadIndex {
+fn fetchDownloadIndex(allocator: Allocator) !DownloadIndex {
     const text = downloadToString(allocator, download_index_url) catch |e| switch (e) {
         else => {
             std.debug.print("failed to download '{s}': {}\n", .{ download_index_url, e });
@@ -455,7 +457,7 @@ fn existsAbsolute(absolutePath: []const u8) !bool {
     return true;
 }
 
-fn listCompilers(allocator: *Allocator) !void {
+fn listCompilers(allocator: Allocator) !void {
     const install_dir_string = try getInstallDir(allocator, .{ .create = false });
     defer allocator.free(install_dir_string);
 
@@ -478,7 +480,7 @@ fn listCompilers(allocator: *Allocator) !void {
     }
 }
 
-fn keepCompiler(allocator: *Allocator, compiler_version: []const u8) !void {
+fn keepCompiler(allocator: Allocator, compiler_version: []const u8) !void {
     const install_dir_string = try getInstallDir(allocator, .{ .create = true });
     defer allocator.free(install_dir_string);
 
@@ -497,7 +499,7 @@ fn keepCompiler(allocator: *Allocator, compiler_version: []const u8) !void {
     std.debug.print("created '{s}{c}{s}{c}{s}'\n", .{ install_dir_string, std.fs.path.sep, compiler_version, std.fs.path.sep, "keep" });
 }
 
-fn cleanCompilers(allocator: *Allocator, compiler_name_opt: ?[]const u8) !void {
+fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
     const install_dir_string = try getInstallDir(allocator, .{ .create = true });
     defer allocator.free(install_dir_string);
     // getting the current compiler
@@ -542,7 +544,7 @@ fn cleanCompilers(allocator: *Allocator, compiler_name_opt: ?[]const u8) !void {
         }
     }
 }
-fn readDefaultCompiler(allocator: *Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8) !?[]const u8 {
+fn readDefaultCompiler(allocator: Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8) !?[]const u8 {
     const path_link = try makeZigPathLinkString(allocator);
     defer allocator.free(path_link);
 
@@ -566,8 +568,8 @@ fn readDefaultCompiler(allocator: *Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8
             std.log.err("path link file '{s}' does not end with ' %*'", .{path_link});
             return error.AlreadyReported;
         }
-        const target_exe = content[1..content.len - 3];
-        return try std.mem.dupe(allocator, u8, targetPathToVersion(target_exe));
+        const target_exe = content[1 .. content.len - 3];
+        return try allocator.dupe(u8, targetPathToVersion(target_exe));
     }
 
     const target_path = std.fs.readLinkAbsolute(path_link, buffer) catch |e| switch (e) {
@@ -575,7 +577,7 @@ fn readDefaultCompiler(allocator: *Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8
         else => return e,
     };
     defer allocator.free(target_path);
-    return try std.mem.dupe(allocator, u8, targetPathToVersion(target_path));
+    return try allocator.dupe(u8, targetPathToVersion(target_path));
 }
 fn targetPathToVersion(target_path: []const u8) []const u8 {
     return std.fs.path.basename(std.fs.path.dirname(std.fs.path.dirname(target_path).?).?);
@@ -596,7 +598,7 @@ fn readMasterDir(buffer: *[std.fs.MAX_PATH_BYTES]u8, install_dir: *std.fs.Dir) !
     };
 }
 
-fn getDefaultCompiler(allocator: *Allocator) !?[]const u8 {
+fn getDefaultCompiler(allocator: Allocator) !?[]const u8 {
     var buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
     const slice_path = (try readDefaultCompiler(allocator, &buffer)) orelse return null;
     var path_to_return = try allocator.alloc(u8, slice_path.len);
@@ -604,7 +606,7 @@ fn getDefaultCompiler(allocator: *Allocator) !?[]const u8 {
     return path_to_return;
 }
 
-fn getMasterDir(allocator: *Allocator, install_dir: *std.fs.Dir) !?[]const u8 {
+fn getMasterDir(allocator: Allocator, install_dir: *std.fs.Dir) !?[]const u8 {
     var buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
     const slice_path = (try readMasterDir(&buffer, install_dir)) orelse return null;
     var path_to_return = try allocator.alloc(u8, slice_path.len);
@@ -612,7 +614,7 @@ fn getMasterDir(allocator: *Allocator, install_dir: *std.fs.Dir) !?[]const u8 {
     return path_to_return;
 }
 
-fn printDefaultCompiler(allocator: *Allocator) !void {
+fn printDefaultCompiler(allocator: Allocator) !void {
     const default_compiler_opt = try getDefaultCompiler(allocator);
     defer if (default_compiler_opt) |default_compiler| allocator.free(default_compiler);
     const stdout = std.io.getStdOut().writer();
@@ -625,7 +627,7 @@ fn printDefaultCompiler(allocator: *Allocator) !void {
 
 const ExistVerify = enum { existence_verified, verify_existence };
 
-fn setDefaultCompiler(allocator: *Allocator, compiler_dir: []const u8, exist_verify: ExistVerify) !void {
+fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, exist_verify: ExistVerify) !void {
     switch (exist_verify) {
         .existence_verified => {},
         .verify_existence => {
@@ -652,11 +654,11 @@ fn setDefaultCompiler(allocator: *Allocator, compiler_dir: []const u8, exist_ver
     }
 }
 
-fn getDefaultUrl(allocator: *Allocator, compiler_version: []const u8) ![]const u8 {
-    return try std.fmt.allocPrint(allocator, "https://ziglang.org/download/{s}/zig-" ++ url_platform ++ "-{0s}." ++ archive_ext, .{ compiler_version });
+fn getDefaultUrl(allocator: Allocator, compiler_version: []const u8) ![]const u8 {
+    return try std.fmt.allocPrint(allocator, "https://ziglang.org/download/{s}/zig-" ++ url_platform ++ "-{0s}." ++ archive_ext, .{compiler_version});
 }
 
-fn installCompiler(allocator: *Allocator, compiler_dir: []const u8, url: []const u8) !void {
+fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const u8) !void {
     if (try existsAbsolute(compiler_dir)) {
         std.debug.print("compiler '{s}' already installed\n", .{compiler_dir});
         return;
@@ -733,14 +735,14 @@ fn installCompiler(allocator: *Allocator, compiler_dir: []const u8, url: []const
     try loggyRenameAbsolute(installing_dir, compiler_dir);
 }
 
-pub fn run(allocator: *std.mem.Allocator, argv: []const []const u8) !std.ChildProcess.Term {
+pub fn run(allocator: std.mem.Allocator, argv: []const []const u8) !std.ChildProcess.Term {
     try logRun(allocator, argv);
     var proc = try std.ChildProcess.init(argv, allocator);
     defer proc.deinit();
     return proc.spawnAndWait();
 }
 
-fn logRun(allocator: *std.mem.Allocator, argv: []const []const u8) !void {
+fn logRun(allocator: std.mem.Allocator, argv: []const []const u8) !void {
     var buffer = try allocator.alloc(u8, getCommandStringLength(argv));
     defer allocator.free(buffer);
 

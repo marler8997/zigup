@@ -20,9 +20,9 @@ fn buildNoreturn(b: *Builder) noreturn {
 }
 fn buildOrFail(b: *Builder) anyerror {
     const ziget_repo = GitRepoStep.create(b, .{
-        .url = "https://github.com/marler8997/ziget",
+        .url = "https://github.com/hazeycode/ziget",
         .branch = null,
-        .sha = "0b43c12a395b67326f5f60dd593a2eea745178c2",
+        .sha = "37f8b6b16e2f724a16d2150f4501b742aaf09390",
     });
     const build2 = addBuild(b, .{ .path = "build2.zig" }, .{});
     build2.addArgs(try getBuildArgs(b));
@@ -35,11 +35,11 @@ fn buildOrFail(b: *Builder) anyerror {
 }
 
 // TODO: remove the following if https://github.com/ziglang/zig/pull/9987 is integrated
-fn getBuildArgs(self: *Builder) ! []const [:0]const u8 {
+fn getBuildArgs(self: *Builder) ![]const [:0]const u8 {
     const args = try std.process.argsAlloc(self.allocator);
     return args[5..];
 }
-pub fn addBuild(self: *Builder, build_file: std.build.FileSource, _: struct { }) *std.build.RunStep {
+pub fn addBuild(self: *Builder, build_file: std.build.FileSource, _: struct {}) *std.build.RunStep {
     const run_step = std.build.RunStep.create(
         self,
         self.fmt("zig build {s}", .{build_file.getDisplayName()}),
