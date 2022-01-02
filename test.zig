@@ -34,7 +34,6 @@ pub fn main() !void {
         defer { allocator.free(result.stdout); allocator.free(result.stderr); }
         try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "Usage"));
     }
-
     {
         const result = try runCaptureOuts(allocator, ".", zigup_args ++ &[_][]const u8 {"default"});
         defer { allocator.free(result.stdout); allocator.free(result.stderr); }
@@ -80,6 +79,7 @@ pub fn main() !void {
         dumpExecResult(result);
         try testing.expect(std.mem.eql(u8, result.stdout, "0.6.0\n"));
     }
+    try runNoCapture(".", zigup_args ++ &[_][]const u8 {"default", "master"});
     {
         const result = try runCaptureOuts(allocator, ".", zigup_args ++ &[_][]const u8 {"list"});
         defer { allocator.free(result.stdout); allocator.free(result.stderr); }
