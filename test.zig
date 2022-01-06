@@ -25,6 +25,11 @@ pub fn main() !void {
     const allocator = allocator_store.allocator();
 
     {
+        const result = try runCaptureOuts(allocator, ".", zigup_args ++ &[_][]const u8 {"default", "master"});
+        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "master has not been fetched"));
+    }
+    {
         const result = try runCaptureOuts(allocator, ".", zigup_args ++ &[_][]const u8 {"-h"});
         defer { allocator.free(result.stdout); allocator.free(result.stderr); }
         try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "Usage"));

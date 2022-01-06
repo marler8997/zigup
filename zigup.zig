@@ -288,9 +288,27 @@ pub fn main2() !u8 {
         }
         if (args.len == 2) {
             const version_string = args[1];
-            const install_dir = try getInstallDir(allocator, .{ .create = true });
-            defer allocator.free(install_dir);
-            const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, version_string });
+            const install_dir_string = try getInstallDir(allocator, .{ .create = true });
+            defer allocator.free(install_dir_string);
+            const resolved_version_string = init_resolved: {
+                if (!std.mem.eql(u8, version_string, "master"))
+                    break :init_resolved version_string;
+
+                var optional_master_dir: ?[]const u8 = blk: {
+                    var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
+                        error.FileNotFound => break :blk null,
+                        else => return e,
+                    };
+                    defer install_dir.close();
+                    break :blk try getMasterDir(allocator, &install_dir);
+                };
+                // no need to free master_dir, this is a short lived program
+                break :init_resolved optional_master_dir orelse {
+                    std.debug.print("Error: master has not been fetched\n", .{});
+                    return 1;
+                };
+            };
+            const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, resolved_version_string });
             defer allocator.free(compiler_dir);
             try setDefaultCompiler(allocator, compiler_dir, .verify_existence);
             return 0;
