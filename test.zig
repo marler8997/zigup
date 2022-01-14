@@ -59,7 +59,7 @@ pub fn main() !void {
             .Exited => |code| try testing.expectEqual(@as(u8, 1), code),
             else => |term| std.debug.panic("unexpected exit {}", .{term}),
         }
-        try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "Error: compiler '0.5.0' is not installed\n"));
+        try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "error: compiler '0.5.0' is not installed\n"));
     }
     try runNoCapture(".", zigup_args ++ &[_][]const u8 {"0.5.0"});
     {
