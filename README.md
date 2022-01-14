@@ -43,7 +43,7 @@ I may support one or more configuration files.  Possibly a file that lives along
 
 On Linux/Bsd/Mac (which I will call "Posix" systems) the default install location is `$HOME/zig`.  Not sure what default directory to use for windows yet, maybe `%APPDATA%\zig`.  This directory will contain a unique sub-directory for every version of the compiler that is installed on the system.  When a new compiler is installed, this tool will also add some scripts that will modify an environment to use that version of the zig compiler.
 
-One compiler will be set as the "default" by linking a symlink or batch file to one of the compiler executables that have been installed. On Posix systems this will be a symlink named `zig` in a `PATH` directory that points to one of the `zig` executables.  On windows this will be a batch file named `zig.bat` in a `PATH` directoty that calls one of the `zig` executables.
+One compiler will be set as the "default" by creating a symlink (or a small exe wrapper on Windows) to one of the compiler executables that have been installed. On Posix systems this will be a symlink named `zig` in a `PATH` directory that points to one of the `zig` executables.  On windows this will be a small executable in a `PATH` directory that calls one of the `zig` executables.
 
 # Operations
 

@@ -35,8 +35,21 @@ pub fn build(b: *Builder) !void {
 
     const target = b.standardTargetOptions(.{});
     const mode = b.standardReleaseOptions();
+
+    const zigup_build_options = b.addOptions();
+    const win32exelink: ?*std.build.LibExeObjStep = blk: {
+        if (target.getOs().tag == .windows) {
+            const exe = b.addExecutable("win32exelink", "win32exelink.zig");
+            exe.setTarget(target);
+            exe.setBuildMode(mode);
+            zigup_build_options.addOptionFileSource("win32exelink_filename", .{ .generated = &exe.output_path_source });
+            break :blk exe;
+        }
+        break :blk null;
+    };
+
     // TODO: Maybe add more executables with different ssl backends
-    const exe = try addZigupExe(b, ziget_repo, target, mode, zigetbuild.SslBackend.iguana);
+    const exe = try addZigupExe(b, ziget_repo, target, mode, zigup_build_options, win32exelink, zigetbuild.SslBackend.iguana);
     exe.install();
 
     const run_cmd = exe.run();
@@ -68,6 +81,8 @@ fn addZigupExe(
     ziget_repo: *GitRepoStep,
     target: std.zig.CrossTarget,
     mode: std.builtin.Mode,
+    zigup_build_options: *std.build.OptionsStep,
+    optional_win32exelink: ?*std.build.LibExeObjStep,
     ssl_backend: ?SslBackend
 ) !*std.build.LibExeObjStep {
     const require_ssl_backend = b.allocator.create(RequireSslBackendStep) catch unreachable;
@@ -76,6 +91,11 @@ fn addZigupExe(
     const exe = b.addExecutable("zigup", "zigup.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
+
+    if (optional_win32exelink) |win32exelink| {
+        exe.step.dependOn(&win32exelink.step);
+    }
+    exe.addOptions("build_options", zigup_build_options);
 
     exe.step.dependOn(&ziget_repo.step);
     zigetbuild.addZigetPkg(exe, ssl_backend, ziget_repo.getPath(&exe.step));

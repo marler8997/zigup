@@ -17,7 +17,7 @@ pub fn main() !void {
 
     // NOTE: for now we are incorrectly assuming the install dir is CWD/zig-out
     const zigup = "." ++ sep ++ "zig-out" ++ sep ++ "bin" ++ sep ++ "zigup" ++ builtin.target.exeFileExt();
-    const path_link = if (builtin.os.tag == .windows) "scratch\\zig.bat" else (bin_dir ++ sep ++ "zig");
+    const path_link = if (builtin.os.tag == .windows) "scratch\\zig.exe" else (bin_dir ++ sep ++ "zig");
     const zigup_args = &[_][]const u8 { zigup, "--install-dir", install_dir, "--path-link", path_link };
 
     var allocator_store = std.heap.ArenaAllocator.init(std.heap.page_allocator);

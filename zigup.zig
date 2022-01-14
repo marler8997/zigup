@@ -2,6 +2,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const mem = std.mem;
 
+const build_options = @import("build_options");
+
 const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
 
@@ -142,7 +144,7 @@ fn makeZigPathLinkString(allocator: Allocator) ![]const u8 {
     // for now we're just going to hardcode the path to $HOME/bin/zig
     const home = try getHomeDir();
     if (builtin.os.tag == .windows) {
-        return try std.fs.path.join(allocator, &[_][]const u8{ home, "zig.bat" });
+        return try std.fs.path.join(allocator, &[_][]const u8{ home, "zig.exe" });
     }
     return try std.fs.path.join(allocator, &[_][]const u8{ home, "bin", "zig" });
 }
@@ -560,7 +562,7 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
         }
     }
 }
-fn readDefaultCompiler(allocator: Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8) !?[]const u8 {
+fn readDefaultCompiler(allocator: Allocator, buffer: *[std.fs.MAX_PATH_BYTES + 1]u8) !?[]const u8 {
     const path_link = try makeZigPathLinkString(allocator);
     defer allocator.free(path_link);
 
@@ -570,25 +572,17 @@ fn readDefaultCompiler(allocator: Allocator, buffer: *[std.fs.MAX_PATH_BYTES]u8)
             else => return e,
         };
         defer file.close();
-        const content = try file.readToEndAlloc(allocator, 99999);
-        defer allocator.free(content);
-        if (content.len == 0) {
-            std.log.err("path link file '{s}' is empty", .{path_link});
+        try file.seekTo(win32exelink.exe_offset);
+        const len = try file.readAll(buffer);
+        if (len != buffer.len) {
+            std.log.err("path link file '{s}' is too small", .{path_link});
             return error.AlreadyReported;
         }
-        if (content[0] != '@') {
-            std.log.err("path link file '{s}' does not begin with the '@' character", .{path_link});
-            return error.AlreadyReported;
-        }
-        if (!std.mem.endsWith(u8, content, " %*")) {
-            std.log.err("path link file '{s}' does not end with ' %*'", .{path_link});
-            return error.AlreadyReported;
-        }
-        const target_exe = content[1..content.len - 3];
+        const target_exe = std.mem.span(std.meta.assumeSentinel(@as([]u8, buffer).ptr, 0));
         return try allocator.dupe(u8, targetPathToVersion(target_exe));
     }
 
-    const target_path = std.fs.readLinkAbsolute(path_link, buffer) catch |e| switch (e) {
+    const target_path = std.fs.readLinkAbsolute(path_link, buffer[0 .. std.fs.MAX_PATH_BYTES]) catch |e| switch (e) {
         error.FileNotFound => return null,
         else => return e,
     };
@@ -615,7 +609,7 @@ fn readMasterDir(buffer: *[std.fs.MAX_PATH_BYTES]u8, install_dir: *std.fs.Dir) !
 }
 
 fn getDefaultCompiler(allocator: Allocator) !?[]const u8 {
-    var buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var buffer: [std.fs.MAX_PATH_BYTES + 1]u8 = undefined;
     const slice_path = (try readDefaultCompiler(allocator, &buffer)) orelse return null;
     var path_to_return = try allocator.alloc(u8, slice_path.len);
     std.mem.copy(u8, path_to_return, slice_path);
@@ -662,12 +656,36 @@ fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, exist_veri
     const link_target = try std.fs.path.join(allocator, &[_][]const u8{ compiler_dir, "files", "zig" ++ builtin.target.exeFileExt() });
     defer allocator.free(link_target);
     if (builtin.os.tag == .windows) {
-        var file = try std.fs.cwd().createFile(path_link, .{});
-        defer file.close();
-        try file.writer().print("@{s} %*", .{link_target});
+        try createExeLink(link_target, path_link);
     } else {
         _ = try loggyUpdateSymlink(link_target, path_link, .{});
     }
+}
+
+const win32exelink = struct {
+    const content =  @embedFile(build_options.win32exelink_filename);
+    const exe_offset: usize = if (builtin.os.tag != .windows) 0 else blk: {
+        @setEvalBranchQuota(content.len * 2);
+        const marker = "!!!THIS MARKS THE zig_exe_string MEMORY!!#";
+        const offset = std.mem.indexOf(u8, content, marker) orelse {
+            @compileError("win32exelink is missing the marker: " ++ marker);
+        };
+        if (std.mem.indexOf(u8, content[offset + 1 ..], marker) != null) {
+            @compileError("win32exelink contains multiple markers (not implemented)");
+        }
+        break :blk offset + marker.len;
+    };
+};
+fn createExeLink(link_target: []const u8, path_link: []const u8) !void {
+    if (path_link.len > std.fs.MAX_PATH_BYTES) {
+        std.debug.print("Error: path_link (size {}) is too large (max {})\n", .{path_link.len, std.fs.MAX_PATH_BYTES});
+        return error.AlreadyReported;
+    }
+    const file = try std.fs.cwd().createFile(path_link, .{});
+    defer file.close();
+    try file.writer().writeAll(win32exelink.content[0 .. win32exelink.exe_offset]);
+    try file.writer().writeAll(link_target);
+    try file.writer().writeAll(win32exelink.content[win32exelink.exe_offset + link_target.len ..]);
 }
 
 fn getDefaultUrl(allocator: Allocator, compiler_version: []const u8) ![]const u8 {
