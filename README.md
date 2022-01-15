@@ -2,7 +2,7 @@
 
 Download and manage zig compilers.
 
-# Commands
+# Usage
 
 ```
 # fetch a compiler and set it as the default
@@ -30,50 +30,29 @@ zigup clean [<version>]
 zigup keep <version>
 ```
 
-# Configuration
+# How the compilers are managed
 
-Things that a user may want to configure
+zigup stores each compiler in a global "install directory" in a versioned subdirectory.  On posix systems the "install directory" is `$HOME/zig` and on windows the install directory will be a directory named "zig" in the same directory as the "zigup.exe".
 
-* Install Directory (where zig compilers get installed to)
-* Zig Path Symlink
-    - on posix, the symlink that lives in a `PATH` directory that points to the default compiler
-    - on windows, the batch file that lives in a `PATH` directory that calls forwards calls to the default compiler executable
+zigup makes the zig program available by creating an entry in a directory that occurs in the `PATH` environment variable.  On posix systems this entry is a symlink to one of the `zig` executables in the install directory.  On windows this is an executable that forwards invocations to one of the `zig` executables in the install directory.
 
-I may support one or more configuration files.  Possibly a file that lives alongside the executable, or in the user's home directory, possibly both.  I've added command-line options to configure the install directory and path symlink for testing, that may be good enough because one can just wrap zigup in a script and forward those options to it.
+Both the "install directory" and "path link" are configurable through command-line options `--install-dir` and `--path-link` respectively.
+# Building
 
-On Linux/Bsd/Mac (which I will call "Posix" systems) the default install location is `$HOME/zig`.  Not sure what default directory to use for windows yet, maybe `%APPDATA%\zig`.  This directory will contain a unique sub-directory for every version of the compiler that is installed on the system.  When a new compiler is installed, this tool will also add some scripts that will modify an environment to use that version of the zig compiler.
+Run `zig build` to build, `zig build test` to test and install with:
+```
+# install to a bin directory with
+cp zig-out/bin/zigup BIN_PATH
+```
 
-One compiler will be set as the "default" by creating a symlink (or a small exe wrapper on Windows) to one of the compiler executables that have been installed. On Posix systems this will be a symlink named `zig` in a `PATH` directory that points to one of the `zig` executables.  On windows this will be a small executable in a `PATH` directory that calls one of the `zig` executables.
+# TODO
 
-# Operations
-
-My breakdown of the operations I'd like.
-
-* download latest compiler (`zigup fetch master`)
-* download specific compiler (`zigup fetch <version>`)
-* list all compilers (`zigup list`)
-* set/get the default compiler (sets the link/script in PATH) (`zigup default` and `zigup default <version>`)
-* set/clear the "keep" flag on a compiler.  Each keep flag can also have a note explaining why it's being kept.
-* clean (cleans compilers without the "keep" flag and aren't the default)
-* keep a compiler (in conjunction with clean)
-* set/remove compiler in current environment. Probably require creating a bash/batch script that the user could source for each installed compiler.
-* setup the environment for a specific version of the compiler?
-
-* download zig index file (`zigup fetch-index`)
-
-> NOTE: by default `zigup list` should display more information, like release date, its "keep" value, etc.  Maybe it should also sort them, probably by release date?
+* set/remove compiler in current environment without overriding the system-wide vesrion.
 
 # Dependencies
 
 zigup depends on https://github.com/marler8997/ziget which in turn depends on other projects depending on which SSL backend is selected.  You can provide `-Dfetch` to `zig build` to automatically clone all repository dependencies, otherwise, the build will report a missing dependency error with an explanation of how to clone it.
 
+The windows target depends on https://github.com/SuperAuguste/zarc to extract zip files.  This repo might point to my fork if there are needed changes pending the acceptance of a PR: https://github.com/marler8997/zarc.
+
 On linux and macos, zigup depends on `tar` to extract the compiler archive files (this may change in the future).
-
-# Building
-
-```
-zig build
-
-# install to a bin directory with
-cp zig-out/bin/zigup BIN_PATH
-```

@@ -30,32 +30,6 @@ const archive_ext = if (builtin.os.tag == .windows) "zip" else "tar.xz";
 var global_optional_install_dir: ?[]const u8 = null;
 var global_optional_path_link: ?[]const u8 = null;
 
-//fn find_zigs(allocator: Allocator) !?[][]u8 {
-//    // don't worry about free for now, this is a short lived program
-//
-//    if (builtin.os.tag == .windows) {
-//        @panic("windows not implemented");
-//        //const result = try runGetOutput(allocator, .{"where", "-a", "zig"});
-//    } else {
-//        const which_result = try cmdlinetool.runGetOutput(allocator, .{ "which", "zig" });
-//        if (runutil.runFailed(&which_result)) {
-//            return null;
-//        }
-//        if (which_result.stderr.len > 0) {
-//            std.log.err("which command failed with:\n{s}", .{which_result.stderr});
-//            std.os.exit(1);
-//        }
-//        loginfo("which output:\n{s}", .{which_result.stdout});
-//        {
-//            var i = std.mem.split(which_result.stdout, "\n");
-//            while (i.next()) |dir| {
-//                loginfo("path '{s}'", .{dir});
-//            }
-//        }
-//    }
-//    @panic("not impl");
-//}
-
 fn loginfo(comptime fmt: []const u8, args: anytype) void {
     std.debug.print(fmt ++ "\n", args);
 }
@@ -95,10 +69,6 @@ fn downloadToString(allocator: Allocator, url: []const u8) ![]u8 {
 fn ignoreHttpCallback(request: []const u8) void { _ = request; }
 
 fn getHomeDir() ![]const u8 {
-    if (builtin.os.tag == .windows) {
-        // by default on Windows, put install link and compilers in same directory as zigup
-        return try std.fs.selfExeDirPathAlloc(std.heap.page_allocator);
-    }
     return std.os.getenv("HOME") orelse {
         std.log.err("cannot find install directory, $HOME environment variable is not set", .{});
         return error.MissingHomeEnvironmentVariable;
@@ -108,6 +78,11 @@ fn getHomeDir() ![]const u8 {
 fn allocInstallDirString(allocator: Allocator) ![]const u8 {
     // TODO: maybe support ZIG_INSTALL_DIR environment variable?
     // TODO: maybe support a file on the filesystem to configure install dir?
+    if (builtin.os.tag == .windows) {
+        const self_exe_dir = try std.fs.selfExeDirPathAlloc(allocator);
+        defer allocator.free(self_exe_dir);
+        return std.fs.path.join(allocator, &.{ self_exe_dir, "zig" });
+    }
     const home = try getHomeDir();
     if (!std.fs.path.isAbsolute(home)) {
         std.log.err("$HOME environment variable '{s}' is not an absolute path", .{home});
@@ -141,12 +116,10 @@ fn getInstallDir(allocator: Allocator, options: GetInstallDirOptions) ![]const u
 fn makeZigPathLinkString(allocator: Allocator) ![]const u8 {
     if (global_optional_path_link) |path| return path;
 
-    // for now we're just going to hardcode the path to $HOME/bin/zig
-    const home = try getHomeDir();
-    if (builtin.os.tag == .windows) {
-        return try std.fs.path.join(allocator, &[_][]const u8{ home, "zig.exe" });
-    }
-    return try std.fs.path.join(allocator, &[_][]const u8{ home, "bin", "zig" });
+    const zigup_dir = try std.fs.selfExeDirPathAlloc(allocator);
+    defer allocator.free(zigup_dir);
+
+    return try std.fs.path.join(allocator, &[_][]const u8{ zigup_dir, "zig" ++ builtin.target.exeFileExt() });
 }
 
 // TODO: this should be in standard lib
@@ -653,6 +626,9 @@ fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, exist_veri
 
     const path_link = try makeZigPathLinkString(allocator);
     defer allocator.free(path_link);
+
+    try verifyPathLink(allocator, path_link);
+
     const link_target = try std.fs.path.join(allocator, &[_][]const u8{ compiler_dir, "files", "zig" ++ builtin.target.exeFileExt() });
     defer allocator.free(link_target);
     if (builtin.os.tag == .windows) {
@@ -660,19 +636,23 @@ fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, exist_veri
     } else {
         _ = try loggyUpdateSymlink(link_target, path_link, .{});
     }
-
-    try verityPathLinkIsHighestPriority(allocator, path_link);
 }
 
-fn verityPathLinkIsHighestPriority(allocator: Allocator, path_link: []const u8) !void {
+/// Verify that path_link will work.  It verifies that `path_link` is
+/// in PATH and there is no zig executable in an earlier directory in PATH.
+fn verifyPathLink(allocator: Allocator, path_link: []const u8) !void {
+    const path_link_dir = std.fs.path.dirname(path_link) orelse {
+        std.log.err("invalid '--path-link' '{s}', it must be a file (not the root directory)", .{path_link});
+        return error.AlreadyReported;
+    };
 
-    const path_link_id = blk: {
-        var file = std.fs.openFileAbsolute(path_link, .{}) catch |err| {
-            std.log.err("unable to open the new exe link '{s}' we just created: {s}", .{path_link, @errorName(err)});
+    const path_link_dir_id = blk: {
+        var dir = std.fs.openDirAbsolute(path_link_dir, .{}) catch |err| {
+            std.log.err("unable to open the path-link directory '{s}': {s}", .{path_link_dir, @errorName(err)});
             return error.AlreadyReported;
         };
-        defer file.close();
-        break :blk try FileId.init(file, path_link);
+        defer dir.close();
+        break :blk try FileId.initFromDir(dir, path_link);
     };
 
     if (builtin.os.tag == .windows) {
@@ -698,22 +678,40 @@ fn verityPathLinkIsHighestPriority(allocator: Allocator, path_link: []const u8) 
 
         var path_it = std.mem.tokenize(u8, path_env, ";");
         while (path_it.next()) |path| {
-            if (try windowsPathExeCheck(allocator, path_link, path_link_id, path, ""))
-                return;
+            switch (try compareDir(path_link_dir_id, path)) {
+                .missing => continue,
+                .match => return,
+                .mismatch => {},
+            }
+            {
+                const exe = try std.fs.path.join(allocator, &.{ path, "zig" });
+                defer allocator.free(exe);
+                try enforceNoZig(path_link, exe);
+            }
+
             var ext_it = std.mem.tokenize(u8, pathext_env, ";");
             while (ext_it.next()) |ext| {
                 if (ext.len == 0) continue;
-                if (try windowsPathExeCheck(allocator, path_link, path_link_id, path, ext))
-                    return;
+                const basename = try std.mem.concat(allocator, u8, &.{"zig", ext});
+                defer allocator.free(basename);
+
+                const exe = try std.fs.path.join(allocator, &.{path, basename});
+                defer allocator.free(exe);
+
+                try enforceNoZig(path_link, exe);
             }
         }
     } else {
         var path_it = std.mem.tokenize(u8, std.os.getenv("PATH") orelse "", ":");
         while (path_it.next()) |path| {
-            const exe = try std.fs.path.join(allocator, &.{path, "zig"});
+            switch (try compareDir(path_link_dir_id, path)) {
+                .missing => continue,
+                .match => return,
+                .mismatch => {},
+            }
+            const exe = try std.fs.path.join(allocator, &.{ path, "zig" });
             defer allocator.free(exe);
-            if (try pathExeCheck(path_link, path_link_id, exe))
-                return;
+            try enforceNoZig(path_link, exe);
         }
     }
 
@@ -721,28 +719,25 @@ fn verityPathLinkIsHighestPriority(allocator: Allocator, path_link: []const u8) 
     return error.AlreadyReported;
 }
 
-fn pathExeCheck(zigup_path_link: []const u8, zigup_path_link_id: FileId, exe_from_path: []const u8) !bool {
-    //std.log.debug("checking '{s}'", .{exe_from_path});
-    const file = std.fs.cwd().openFile(exe_from_path, .{}) catch |err| switch (err) {
-        error.FileNotFound, error.IsDir => return false,
+fn compareDir(dir_id: FileId, other_dir: []const u8) !enum { missing, match, mismatch } {
+    var dir = std.fs.cwd().openDir(other_dir, .{}) catch |err| switch (err) {
+        error.FileNotFound, error.NotDir, error.BadPathName => return .missing,
         else => |e| return e,
     };
-    const id = try FileId.init(file, exe_from_path);
-    if (zigup_path_link_id.eql(id))
-        return true;
-
-    std.log.err("the new pathlink '{s}' is lower priority in PATH than '{s}'", .{zigup_path_link, exe_from_path});
-    return error.AlreadyReported;
+    defer dir.close();
+    return if (dir_id.eql(try FileId.initFromDir(dir, other_dir))) .match else .mismatch;
 }
 
-pub fn windowsPathExeCheck(allocator: Allocator, path_link: []const u8, zigup_path_link_id: FileId, path: []const u8, ext: []const u8) !bool {
-    const basename = try std.mem.concat(allocator, u8, &.{"zig", ext});
-    defer allocator.free(basename);
+fn enforceNoZig(path_link: []const u8, exe: []const u8) !void {
+    var file = std.fs.cwd().openFile(exe, .{}) catch |err| switch (err) {
+        error.FileNotFound, error.IsDir => return,
+        else => |e| return e,
+    };
+    defer file.close();
 
-    const exe = try std.fs.path.join(allocator, &.{path, basename});
-    defer allocator.free(exe);
-
-    return pathExeCheck(path_link, zigup_path_link_id, exe);
+    // todo: on posix systems ignore the file if it is not executable
+    std.log.err("path-link '{s}' is lower priority in PATH than '{s}'", .{path_link, exe});
+    return error.AlreadyReported;
 }
 
 const FileId = struct {
@@ -755,7 +750,7 @@ const FileId = struct {
         break :blk @TypeOf(st.ino);
     },
 
-    pub fn init(file: std.fs.File, filename_for_error: []const u8) !FileId {
+    pub fn initFromFile(file: std.fs.File, filename_for_error: []const u8) !FileId {
         if (builtin.os.tag == .windows) {
             var info: win32.BY_HANDLE_FILE_INFORMATION = undefined;
             if (0 == win32.GetFileInformationByHandle(file.handle, &info)) {
@@ -772,6 +767,13 @@ const FileId = struct {
             .dev = st.dev,
             .ino = st.ino,
         };
+    }
+
+    pub fn initFromDir(dir: std.fs.Dir, name_for_error: []const u8) !FileId {
+        if (builtin.os.tag == .windows) {
+            return initFromFile(std.fs.File { .handle = dir.fd}, name_for_error);
+        }
+        return initFromFile(std.fs.File { .handle = dir.fd }, name_for_error);
     }
 
     pub fn eql(self: FileId, other: FileId) bool {

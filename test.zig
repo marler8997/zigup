@@ -8,9 +8,9 @@ const path_env_sep = if (builtin.os.tag == .windows) ";" else ":";
 const fixdeletetree = @import("fixdeletetree.zig");
 
 var child_env_map: std.BufMap = undefined;
-var path_env: *[]const u8 = undefined;
+var path_env_ptr: *[]const u8 = undefined;
 fn setPathEnv(new_path: []const u8) void {
-    path_env.* = new_path;
+    path_env_ptr.* = new_path;
     std.log.info("PATH={s}", .{new_path});
 }
 
@@ -18,15 +18,23 @@ pub fn main() !u8 {
     std.log.info("running test!", .{});
     try fixdeletetree.deleteTree(std.fs.cwd(), "scratch");
     try std.fs.cwd().makeDir("scratch");
-    const install_dir = "scratch" ++ sep ++ "install";
     const bin_dir = "scratch" ++ sep ++ "bin";
-    try std.fs.cwd().makeDir(install_dir);
     try std.fs.cwd().makeDir(bin_dir);
+    const install_dir = if (builtin.os.tag == .windows) (bin_dir ++ "\\zig") else ("scratch/install");
+    try std.fs.cwd().makeDir(install_dir);
 
     // NOTE: for now we are incorrectly assuming the install dir is CWD/zig-out
-    const zigup = "." ++ sep ++ "zig-out" ++ sep ++ "bin" ++ sep ++ "zigup" ++ builtin.target.exeFileExt();
-    const path_link = bin_dir ++ sep ++ "zig" ++ builtin.target.exeFileExt();
-    const zigup_args = &[_][]const u8 { zigup, "--install-dir", install_dir, "--path-link", path_link };
+    const zigup = "." ++ sep ++ bin_dir ++ sep ++ "zigup" ++ builtin.target.exeFileExt();
+    try std.fs.cwd().copyFile(
+        "zig-out" ++ sep ++ "bin" ++ sep ++ "zigup" ++ builtin.target.exeFileExt(),
+        std.fs.cwd(),
+        zigup,
+        .{},
+    );
+
+    const zigup_args = &[_][]const u8 { zigup } ++ (
+        if (builtin.os.tag == .windows) &[_][]const u8 { } else &[_][]const u8 { "--install-dir", install_dir }
+    );
 
     var allocator_store = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer allocator_store.deinit();
@@ -34,15 +42,17 @@ pub fn main() !u8 {
 
     // add our scratch/bin directory to PATH
     child_env_map = try std.process.getEnvMap(allocator);
-    path_env = bufMapGetEnvPtr(child_env_map, "PATH") orelse {
+    path_env_ptr = bufMapGetEnvPtr(child_env_map, "PATH") orelse {
         std.log.err("the PATH environment variable does not exist?", .{});
         return 1;
     };
     const cwd = try std.process.getCwdAlloc(allocator);
+
+    const original_path_env = path_env_ptr.*;
     {
         const scratch_bin_path = try std.fs.path.join(allocator, &.{ cwd, bin_dir });
         defer allocator.free(scratch_bin_path);
-        setPathEnv(try std.mem.concat(allocator, u8, &.{ scratch_bin_path, path_env_sep, path_env.*}));
+        setPathEnv(try std.mem.concat(allocator, u8, &.{ scratch_bin_path, path_env_sep, original_path_env}));
     }
 
     {
@@ -105,6 +115,14 @@ pub fn main() !u8 {
         dumpExecResult(result);
         try testing.expect(std.mem.eql(u8, result.stdout, "0.6.0\n"));
     }
+    {
+        const save_path_env = path_env_ptr.*;
+        defer setPathEnv(save_path_env);
+        setPathEnv("");
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"default", "master"});
+        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, " is not in PATH"));
+    }
     try runNoCapture(zigup_args ++ &[_][]const u8 {"default", "master"});
     {
         const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"list"});
@@ -153,7 +171,7 @@ pub fn main() !u8 {
         const bin2_dir = "scratch" ++ sep ++ "bin2";
         try std.fs.cwd().makeDir(bin2_dir);
 
-        const previous_path = path_env.*;
+        const previous_path = path_env_ptr.*;
         const scratch_bin2_path = try std.fs.path.join(allocator, &.{ cwd, bin2_dir });
         defer allocator.free(scratch_bin2_path);
 
