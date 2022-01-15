@@ -13,17 +13,18 @@ pub fn deleteTree(dir: std.fs.Dir, sub_path: []const u8) !void {
     const MAX_ATTEMPTS = 10;
     var attempt: u8 = 0;
     while (true) : (attempt += 1) {
-        return dir.deleteTree(sub_path) catch |e| {
-            if (attempt == MAX_ATTEMPTS) return e;
-            switch (e) {
+        if (dir.deleteTree(sub_path)) {
+            return;
+        } else |err| {
+            if (attempt == MAX_ATTEMPTS) return err;
+            switch (err) {
                 error.FileBusy => {
-                    if (attempt == MAX_ATTEMPTS) return e;
-                    std.log.warn("path '{s}' is busy, will retry", .{sub_path});
+                    std.log.warn("path '{s}' is busy (attempt {}), will retry", .{sub_path, attempt});
                     std.time.sleep(std.time.ns_per_ms * 100); // sleep for 100 ms
                 },
-                else => return e,
+                else => |e| return e,
             }
-        };
+        }
     }
 }
 pub fn deleteTreeAbsolute(dir_absolute: []const u8) !void {
