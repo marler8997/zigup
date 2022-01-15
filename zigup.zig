@@ -660,7 +660,148 @@ fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, exist_veri
     } else {
         _ = try loggyUpdateSymlink(link_target, path_link, .{});
     }
+
+    try verityPathLinkIsHighestPriority(allocator, path_link);
 }
+
+fn verityPathLinkIsHighestPriority(allocator: Allocator, path_link: []const u8) !void {
+
+    const path_link_id = blk: {
+        var file = std.fs.openFileAbsolute(path_link, .{}) catch |err| {
+            std.log.err("unable to open the new exe link '{s}' we just created: {s}", .{path_link, @errorName(err)});
+            return error.AlreadyReported;
+        };
+        defer file.close();
+        break :blk try FileId.init(file, path_link);
+    };
+
+    if (builtin.os.tag == .windows) {
+        const path_env = std.process.getEnvVarOwned(allocator, "PATH") catch |err| switch (err) {
+            error.EnvironmentVariableNotFound => return,
+            else => |e| return e,
+        };
+        defer allocator.free(path_env);
+
+        var free_pathext: ?[]const u8 = null;
+        defer if (free_pathext) |p| allocator.free(p);
+
+        const pathext_env = blk: {
+            if (std.process.getEnvVarOwned(allocator, "PATHEXT")) |env| {
+                free_pathext = env;
+                break :blk env;
+            } else |err| switch (err) {
+                error.EnvironmentVariableNotFound => break :blk "",
+                else => |e| return e,
+            }
+            break :blk "";
+        };
+
+        var path_it = std.mem.tokenize(u8, path_env, ";");
+        while (path_it.next()) |path| {
+            if (try windowsPathExeCheck(allocator, path_link, path_link_id, path, ""))
+                return;
+            var ext_it = std.mem.tokenize(u8, pathext_env, ";");
+            while (ext_it.next()) |ext| {
+                if (ext.len == 0) continue;
+                if (try windowsPathExeCheck(allocator, path_link, path_link_id, path, ext))
+                    return;
+            }
+        }
+    } else {
+        var path_it = std.mem.tokenize(u8, std.os.getenv("PATH") orelse "", ":");
+        while (path_it.next()) |path| {
+            const exe = try std.fs.path.join(allocator, &.{path, "zig"});
+            defer allocator.free(exe);
+            if (try pathExeCheck(path_link, path_link_id, exe))
+                return;
+        }
+    }
+
+    std.log.err("the path link '{s}' is not in PATH", .{path_link});
+    return error.AlreadyReported;
+}
+
+fn pathExeCheck(zigup_path_link: []const u8, zigup_path_link_id: FileId, exe_from_path: []const u8) !bool {
+    //std.log.debug("checking '{s}'", .{exe_from_path});
+    const file = std.fs.cwd().openFile(exe_from_path, .{}) catch |err| switch (err) {
+        error.FileNotFound, error.IsDir => return false,
+        else => |e| return e,
+    };
+    const id = try FileId.init(file, exe_from_path);
+    if (zigup_path_link_id.eql(id))
+        return true;
+
+    std.log.err("the new pathlink '{s}' is lower priority in PATH than '{s}'", .{zigup_path_link, exe_from_path});
+    return error.AlreadyReported;
+}
+
+pub fn windowsPathExeCheck(allocator: Allocator, path_link: []const u8, zigup_path_link_id: FileId, path: []const u8, ext: []const u8) !bool {
+    const basename = try std.mem.concat(allocator, u8, &.{"zig", ext});
+    defer allocator.free(basename);
+
+    const exe = try std.fs.path.join(allocator, &.{path, basename});
+    defer allocator.free(exe);
+
+    return pathExeCheck(path_link, zigup_path_link_id, exe);
+}
+
+const FileId = struct {
+    dev: if (builtin.os.tag == .windows) u32 else blk: {
+        var st: std.os.Stat = undefined;
+        break :blk @TypeOf(st.dev);
+    },
+    ino: if (builtin.os.tag == .windows) u64 else blk: {
+        var st: std.os.Stat = undefined;
+        break :blk @TypeOf(st.ino);
+    },
+
+    pub fn init(file: std.fs.File, filename_for_error: []const u8) !FileId {
+        if (builtin.os.tag == .windows) {
+            var info: win32.BY_HANDLE_FILE_INFORMATION = undefined;
+            if (0 == win32.GetFileInformationByHandle(file.handle, &info)) {
+                std.log.err("GetFileInformationByHandle on '{s}' failed, error={}", .{filename_for_error, std.os.windows.kernel32.GetLastError()});
+                return error.AlreadyReported;
+            }
+            return FileId{
+                .dev = info.dwVolumeSerialNumber,
+                .ino = (@intCast(u64, info.nFileIndexHigh) << 32) | @intCast(u64, info.nFileIndexLow),
+            };
+        }
+        const st = try std.os.fstat(file.handle);
+        return FileId{
+            .dev = st.dev,
+            .ino = st.ino,
+        };
+    }
+
+    pub fn eql(self: FileId, other: FileId) bool {
+        return self.dev == other.dev and self.ino == other.ino;
+    }
+};
+
+const win32 = struct {
+    pub const BOOL = i32;
+    pub const FILETIME = extern struct {
+        dwLowDateTime: u32,
+        dwHighDateTime: u32,
+    };
+    pub const BY_HANDLE_FILE_INFORMATION = extern struct {
+        dwFileAttributes: u32,
+        ftCreationTime: FILETIME,
+        ftLastAccessTime: FILETIME,
+        ftLastWriteTime: FILETIME,
+        dwVolumeSerialNumber: u32,
+        nFileSizeHigh: u32,
+        nFileSizeLow: u32,
+        nNumberOfLinks: u32,
+        nFileIndexHigh: u32,
+        nFileIndexLow: u32,
+    };
+    pub extern "KERNEL32" fn GetFileInformationByHandle(
+        hFile: ?@import("std").os.windows.HANDLE,
+        lpFileInformation: ?*BY_HANDLE_FILE_INFORMATION,
+    ) callconv(@import("std").os.windows.WINAPI) BOOL;
+};
 
 const win32exelink = struct {
     const content =  @embedFile(build_options.win32exelink_filename);
