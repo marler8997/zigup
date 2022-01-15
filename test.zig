@@ -139,6 +139,12 @@ pub fn main() !u8 {
     try runNoCapture(zigup_args ++ &[_][]const u8 {"clean"});
     try testing.expectEqual(@as(u32, 3), try getCompilerCount(install_dir));
 
+    // Just make a directory to trick zigup into thinking there is another compiler so we don't have to wait for it to download/install
+    try std.fs.cwd().makeDir(install_dir ++ sep ++ "0.9.0");
+    try testing.expectEqual(@as(u32, 4), try getCompilerCount(install_dir));
+    try runNoCapture(zigup_args ++ &[_][]const u8 {"clean"});
+    try testing.expectEqual(@as(u32, 3), try getCompilerCount(install_dir));
+
     {
         const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"clean", "0.6.0"});
         defer { allocator.free(result.stdout); allocator.free(result.stderr); }

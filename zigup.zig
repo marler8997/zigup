@@ -521,14 +521,16 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
                 continue;
             }
 
-            var compiler_dir = try install_dir.openDir(entry.name, .{});
-            defer compiler_dir.close();
-            if (compiler_dir.access("keep", .{})) |_| {
-                loginfo("keeping '{s}' (has keep file)", .{entry.name});
-                continue;
-            } else |e| switch (e) {
-                error.FileNotFound => {},
-                else => return e,
+            {
+                var compiler_dir = try install_dir.openDir(entry.name, .{});
+                defer compiler_dir.close();
+                if (compiler_dir.access("keep", .{})) |_| {
+                    loginfo("keeping '{s}' (has keep file)", .{entry.name});
+                    continue;
+                } else |e| switch (e) {
+                    error.FileNotFound => {},
+                    else => return e,
+                }
             }
             loginfo("deleting '{s}{c}{s}'", .{ install_dir_string, std.fs.path.sep, entry.name });
             try fixdeletetree.deleteTree(install_dir, entry.name);
