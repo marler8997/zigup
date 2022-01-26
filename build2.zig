@@ -57,6 +57,9 @@ pub fn build(b: *Builder) !void {
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+    if (b.args) |args| {
+        run_cmd.addArgs(args);
+    }
 
     addTest(b, exe, target, mode);
 }
