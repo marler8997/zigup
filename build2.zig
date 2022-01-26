@@ -115,6 +115,17 @@ fn addZigupExe(
             .name = "zarc",
             .path = .{ .path = try join(b, &[_][]const u8 { zarc_repo_path, "src", "main.zig" }) },
         });
+        const hwzip_repo = GitRepoStep.create(b, .{
+            .url = "https://github.com/hdorio/hwzip.zig",
+            .branch = null,
+            .sha = "85c61b6b32f6f7d6cde653db49258b53281d5198",
+        });
+        exe.step.dependOn(&hwzip_repo.step);
+        const hwzip_repo_path = hwzip_repo.getPath(&exe.step);
+        exe.addPackage(Pkg {
+            .name = "hwzip",
+            .path = .{ .path = try join(b, &[_][]const u8 { hwzip_repo_path, "src", "hwzip.zig" }) },
+        });
     }
 
     exe.step.dependOn(&require_ssl_backend.step);

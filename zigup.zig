@@ -8,7 +8,8 @@ const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
 
 const ziget = @import("ziget");
-const zarc = @import("zarc");
+//const zarc = @import("zarc");
+const hwzip = @import("hwzip");
 
 const fixdeletetree = @import("fixdeletetree.zig");
 
@@ -879,14 +880,11 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
 
                     var installing_dir_opened = try std.fs.openDirAbsolute(installing_dir, .{});
                     defer installing_dir_opened.close();
+                    const archive_absolute_z = try allocator.dupeZ(u8, archive_absolute);
+                    defer allocator.free(archive_absolute_z);
                     loginfo("extracting archive to \"{s}\"", .{installing_dir});
                     var timer = try std.time.Timer.start();
-                    var archive_file = try std.fs.openFileAbsolute(archive_absolute, .{});
-                    defer archive_file.close();
-                    const reader = archive_file.reader();
-                    var archive = try zarc.zip.load(allocator, reader);
-                    defer archive.deinit(allocator);
-                    _ = try archive.extract(reader, installing_dir_opened, .{});
+                    try hwzip.extract_zip(archive_absolute_z);
                     const time = timer.read();
                     loginfo("extracted archive in {d:.2} s", .{@intToFloat(f32, time) / @intToFloat(f32, std.time.ns_per_s)});
                 }
