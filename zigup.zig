@@ -464,6 +464,8 @@ fn listCompilers(allocator: Allocator) !void {
     const master_dir = try getMasterDir(allocator, &install_dir);
     defer if (master_dir) |master| allocator.free(master);
 
+    var found_default = false;
+
     const stdout = std.io.getStdOut().writer();
     {
         var it = install_dir.iterate();
@@ -475,21 +477,24 @@ fn listCompilers(allocator: Allocator) !void {
 
             try stdout.print("{s}", .{entry.name});
 
-            const is_master = if (master_dir) |master|
-                (if (mem.eql(u8, master, entry.name)) true else false)
-                else false;
-
-            if (is_master) {
-                try stdout.writeAll(" -> master");
+            if (master_dir != null and mem.eql(u8, master_dir.?, entry.name)) {
+                try stdout.writeAll(" (master)");
             }
 
             if (default_compiler) |default| {
-                if (mem.eql(u8, default, entry.name) or (is_master and mem.eql(u8, default, "master"))) {
+                if (mem.eql(u8, default, entry.name)) {
                     try stdout.writeAll(" (default)");
+                    found_default = true;
                 }
             }
 
             try stdout.writeByte('\n');
+        }
+
+        if (default_compiler) |default| {
+            if (!found_default) {
+                std.log.err("default compiler '{s}' is not among the installed compilers", .{default});
+            }
         }
     }
 }
@@ -627,26 +632,27 @@ fn printDefaultCompiler(allocator: Allocator) !void {
     defer if (default_compiler_opt) |default_compiler| allocator.free(default_compiler);
     const stdout = std.io.getStdOut().writer();
     if (default_compiler_opt) |default_compiler| {
-        if (mem.eql(u8, default_compiler, "master")) {
-            const install_dir_string = try getInstallDir(allocator, .{ .create = false });
-            defer allocator.free(install_dir_string);
+        const install_dir_string = try getInstallDir(allocator, .{ .create = false });
+        defer allocator.free(install_dir_string);
 
-            var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
-                error.FileNotFound => return,
-                else => return e,
-            };
-            defer install_dir.close();
+        var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
+            error.FileNotFound => return,
+            else => return e,
+        };
+        defer install_dir.close();
 
-            const master_dir = try getMasterDir(allocator, &install_dir);
-            defer if (master_dir) |master| allocator.free(master);
+        const master_dir = try getMasterDir(allocator, &install_dir);
+        defer if (master_dir) |master| allocator.free(master);
 
-            if (master_dir) |master| {
-                try stdout.print("master -> {s}\n", .{master});
+        try stdout.print("{s}", .{default_compiler});
+
+        if (master_dir) |master| {
+            if (mem.eql(u8, master, default_compiler)) {
+                try stdout.print(" (master)", .{});
             }
         }
-        else {
-            try stdout.print("{s}\n", .{default_compiler});
-        }
+
+        try stdout.writeByte('\n');
     } else {
         try stdout.writeAll("<no-default>\n");
     }
