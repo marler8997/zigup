@@ -107,7 +107,7 @@ fn addZigupExe(
         const zarc_repo = GitRepoStep.create(b, .{
             .url = "https://github.com/marler8997/zarc",
             .branch = "protected",
-            .sha = "f66a05a50c71e17ee74fa13047f84002fb5cd6a0",
+            .sha = "acd3f4b7fe1fbd2ac533f441f85a56bfaa489f49",
         });
         exe.step.dependOn(&zarc_repo.step);
         const zarc_repo_path = zarc_repo.getPath(&exe.step);
