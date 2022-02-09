@@ -33,7 +33,14 @@ pub fn build(b: *Builder) !void {
     //       having the iguana repo copied into this one
     //try addGithubReleaseExe(b, github_release_step, ziget_repo, "x86_64-linux", SslBackend.iguana);
 
-    const target = b.standardTargetOptions(.{});
+    const target = if (b.option([]const u8, "ci_target", "the CI target being built")) |ci_target|
+        try std.zig.CrossTarget.parse(.{ .arch_os_abi = ci_target_map.get(ci_target) orelse {
+            std.log.err("unknown ci_target '{s}'", .{ci_target});
+            std.os.exit(1);
+        } })
+    else
+        b.standardTargetOptions(.{});
+
     const mode = b.standardReleaseOptions();
 
     const zigup_build_options = b.addOptions();
@@ -185,3 +192,9 @@ fn addGithubReleaseExe(b: *Builder, github_release_step: *std.build.Step, ziget_
 fn join(b: *Builder, parts: []const []const u8) ![]const u8 {
     return try std.fs.path.join(b.allocator, parts);
 }
+
+const ci_target_map = std.ComptimeStringMap([]const u8, .{
+    .{ "ubuntu-latest", "x86_64-linux" },
+    .{ "macos-latest", "x86_64-macos" },
+    .{ "windows-latest", "x86_64-windows" },
+});

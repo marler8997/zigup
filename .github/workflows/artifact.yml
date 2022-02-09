@@ -13,7 +13,7 @@ jobs:
         with:
           version: 0.10.0-dev.555+1b6a1e691
       - run: |
-          zig build test -Dfetch
+          zig build test -Dfetch -Dci_target=${{matrix.os}}
         shell: bash
       - uses: actions/upload-artifact@v2
         with:
