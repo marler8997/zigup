@@ -205,6 +205,9 @@ pub fn main2() !u8 {
                 help();
                 return 0;
             } else {
+                if (newlen == 0 and std.mem.eql(u8, "run", arg)) {
+                    return try runCompiler(allocator, args[i + 1], args[i + 2 ..]);
+                }
                 args[newlen] = args[i];
                 newlen += 1;
             }
@@ -305,6 +308,23 @@ pub fn main2() !u8 {
     return 1;
 
     //const optionalInstallPath = try find_zigs(allocator);
+}
+
+pub fn runCompiler(allocator: Allocator, version_string: []const u8, args: []const []const u8) !u8 {
+    const install_dir_string = try getInstallDir(allocator, .{ .create = true });
+    defer allocator.free(install_dir_string);
+
+    const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, version_string });
+    defer allocator.free(compiler_dir);
+
+    var argv = std.ArrayList([]const u8).init(allocator);
+    try argv.append(try std.fs.path.join(allocator, &.{ compiler_dir, "files", "zig" ++ builtin.target.exeFileExt() }));
+    try argv.appendSlice(args);
+
+    const proc = try std.ChildProcess.init(argv.items, allocator);
+    defer proc.deinit();
+    const ret_val = try proc.spawnAndWait();
+    return ret_val.Exited;
 }
 
 const SetDefault = enum { set_default, leave_default };
