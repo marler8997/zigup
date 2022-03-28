@@ -133,7 +133,11 @@ pub fn main() !u8 {
     }
     try runNoCapture(zigup_args ++ &[_][]const u8 {"default", "0.5.0"});
     try testing.expectEqual(@as(u32, 3), try getCompilerCount(install_dir));
-
+    {
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"run", "0.6.0", "version"});
+        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        try testing.expect(std.mem.containsAtLeast(u8, result.stdout, 1, "0.6.0"));
+    }
     try runNoCapture(zigup_args ++ &[_][]const u8 {"keep", "0.6.0"});
     // doesn't delete anything because we have keepfile and master doens't get deleted
     try runNoCapture(zigup_args ++ &[_][]const u8 {"clean"});
