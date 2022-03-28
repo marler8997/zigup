@@ -28,6 +28,9 @@ zigup clean [<version>]
 
 # mark a compiler to keep
 zigup keep <version>
+
+# run a specific version of the copmiler
+zigup run <version> <args>...
 ```
 
 # How the compilers are managed

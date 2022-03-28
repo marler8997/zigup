@@ -30,8 +30,11 @@ const archive_ext = if (builtin.os.tag == .windows) "zip" else "tar.xz";
 var global_optional_install_dir: ?[]const u8 = null;
 var global_optional_path_link: ?[]const u8 = null;
 
+var global_enable_log = true;
 fn loginfo(comptime fmt: []const u8, args: anytype) void {
-    std.debug.print(fmt ++ "\n", args);
+    if (global_enable_log) {
+        std.debug.print(fmt ++ "\n", args);
+    }
 }
 
 fn download(allocator: Allocator, url: []const u8, writer: anytype) !void {
@@ -142,6 +145,7 @@ fn help() void {
         \\  zigup clean   [VERSION]       deletes the given compiler version, otherwise, cleans all compilers
         \\                                that aren't the default, master, or marked to keep.
         \\  zigup keep VERSION            mark a compiler to be kept during clean
+        \\  zigup run VERSION ARGS...     run the given VERSION of the compiler with the given ARGS...
         \\
         \\Uncommon Usage:
         \\
@@ -206,7 +210,7 @@ pub fn main2() !u8 {
                 return 0;
             } else {
                 if (newlen == 0 and std.mem.eql(u8, "run", arg)) {
-                    return try runCompiler(allocator, args[i + 1], args[i + 2 ..]);
+                    return try runCompiler(allocator, args[i+1..]);
                 }
                 args[newlen] = args[i];
                 newlen += 1;
@@ -310,21 +314,39 @@ pub fn main2() !u8 {
     //const optionalInstallPath = try find_zigs(allocator);
 }
 
-pub fn runCompiler(allocator: Allocator, version_string: []const u8, args: []const []const u8) !u8 {
+pub fn runCompiler(allocator: Allocator, args: []const []const u8) !u8 {
+    // disable log so we don't add extra output to whatever the compiler will output
+    global_enable_log = false;
+    if (args.len <= 1) {
+        std.log.err("zigup run requires at least 2 arguments: zigup run VERSION PROG ARGS...", .{});
+        return 1;
+    }
+    const version_string = args[0];
     const install_dir_string = try getInstallDir(allocator, .{ .create = true });
     defer allocator.free(install_dir_string);
 
     const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, version_string });
     defer allocator.free(compiler_dir);
+    if (!try existsAbsolute(compiler_dir)) {
+        std.log.err("compiler '{s}' does not exist, fetch it first with: zigup fetch {0s}", .{version_string});
+        return 1;
+    }
 
     var argv = std.ArrayList([]const u8).init(allocator);
     try argv.append(try std.fs.path.join(allocator, &.{ compiler_dir, "files", "zig" ++ builtin.target.exeFileExt() }));
-    try argv.appendSlice(args);
+    try argv.appendSlice(args[1..]);
 
+    // TODO: use "execve" if on linux
     const proc = try std.ChildProcess.init(argv.items, allocator);
     defer proc.deinit();
     const ret_val = try proc.spawnAndWait();
-    return ret_val.Exited;
+    switch (ret_val) {
+        .Exited => |code| return code,
+        else => |result| {
+            std.log.err("compiler exited with {}", .{result});
+            return 0xff;
+        },
+    }
 }
 
 const SetDefault = enum { set_default, leave_default };

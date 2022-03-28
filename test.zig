@@ -136,7 +136,12 @@ pub fn main() !u8 {
     {
         const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"run", "0.6.0", "version"});
         defer { allocator.free(result.stdout); allocator.free(result.stderr); }
-        try testing.expect(std.mem.containsAtLeast(u8, result.stdout, 1, "0.6.0"));
+        try testing.expectEqualSlices(u8, "0.6.0\n", result.stdout);
+    }
+    {
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"run", "doesnotexist", "version"});
+        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        try testing.expectEqualSlices(u8, "error: compiler 'doesnotexist' does not exist, fetch it first with: zigup fetch doesnotexist\n", result.stderr);
     }
     try runNoCapture(zigup_args ++ &[_][]const u8 {"keep", "0.6.0"});
     // doesn't delete anything because we have keepfile and master doens't get deleted
