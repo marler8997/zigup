@@ -205,6 +205,8 @@ pub fn main() !u8 {
             try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, " is lower priority in PATH than "));
         }
     }
+    // verify at least one nightly build version
+    try runNoCapture(zigup_args ++ &[_][]const u8 {"0.10.0-dev.2306+50a5ddecc"});
 
     std.log.info("Success", .{});
     return 0;

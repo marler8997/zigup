@@ -142,6 +142,7 @@ fn help() void {
         \\  zigup VERSION                 download and set VERSION compiler as default
         \\  zigup fetch VERSION           download VERSION compiler
         \\  zigup default [VERSION]       get or set the default compiler
+        \\  zigup list                    list installed compilers
         \\  zigup clean   [VERSION]       deletes the given compiler version, otherwise, cleans all compilers
         \\                                that aren't the default, master, or marked to keep.
         \\  zigup keep VERSION            mark a compiler to be kept during clean
@@ -362,36 +363,50 @@ fn fetchCompiler(allocator: Allocator, version_arg: []const u8, set_default: Set
     //defer if (optionalDownloadIndex) |downloadIndex| downloadIndex.deinit(allocator);
 
     const VersionUrl = struct { version: []const u8, url: []const u8 };
-
     // NOTE: we only fetch the download index if the user wants to download 'master', we can skip
-    //       this step for all other versions because the version to URL mapping is fixed (see getDefaultUrl)
+    //       this step for all other versions because the version to URL mapping is fixed (see getDefaultDownloadUrl)
     const is_master = std.mem.eql(u8, version_arg, "master");
-    const version_url = blk: {
+    const version_urls: [2]?VersionUrl = blk: {
         if (!is_master)
-            break :blk VersionUrl{ .version = version_arg, .url = try getDefaultUrl(allocator, version_arg) };
+            break :blk .{
+                // try tagged releases 1st
+                VersionUrl{ .version = version_arg, .url = try getDefaultDownloadUrl(allocator, version_arg) },
+                // try nightly builds as fallback
+                VersionUrl{ .version = version_arg, .url = try getDefaultBuildUrl(allocator, version_arg) },
+            };
         optional_download_index = try fetchDownloadIndex(allocator);
         const master = optional_download_index.?.json.root.Object.get("master").?;
         const compiler_version = master.Object.get("version").?.String;
         const master_linux = master.Object.get(json_platform).?;
         const master_linux_tarball = master_linux.Object.get("tarball").?.String;
-        break :blk VersionUrl{ .version = compiler_version, .url = master_linux_tarball };
+        break :blk .{
+            VersionUrl{ .version = compiler_version, .url = master_linux_tarball },
+            null,
+        };
     };
-    const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, version_url.version });
-    defer allocator.free(compiler_dir);
-    try installCompiler(allocator, compiler_dir, version_url.url);
-    if (is_master) {
-        const master_symlink = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, "master" });
-        defer allocator.free(master_symlink);
-        if (builtin.os.tag == .windows) {
-            var file = try std.fs.createFileAbsolute(master_symlink, .{});
-            defer file.close();
-            try file.writer().writeAll(version_url.version);
-        } else {
-            _ = try loggyUpdateSymlink(version_url.version, master_symlink, .{ .is_directory = true });
+    for (version_urls) |maybe_v| {
+        const v = maybe_v orelse continue;
+        const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, v.version });
+        defer allocator.free(compiler_dir);
+        installCompiler(allocator, compiler_dir, v.url) catch {
+            loginfo("trying nightly build instead...", .{});
+            continue;
+        };
+        if (is_master) {
+            const master_symlink = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, "master" });
+            defer allocator.free(master_symlink);
+            if (builtin.os.tag == .windows) {
+                var file = try std.fs.createFileAbsolute(master_symlink, .{});
+                defer file.close();
+                try file.writer().writeAll(v.version);
+            } else {
+                _ = try loggyUpdateSymlink(v.version, master_symlink, .{ .is_directory = true });
+            }
         }
-    }
-    if (set_default == .set_default) {
-        try setDefaultCompiler(allocator, compiler_dir, .existence_verified);
+        if (set_default == .set_default) {
+            try setDefaultCompiler(allocator, compiler_dir, .existence_verified);
+        }
+        break;
     }
 }
 
@@ -875,8 +890,14 @@ fn createExeLink(link_target: []const u8, path_link: []const u8) !void {
     try file.writer().writeAll(win32exelink.content[win32exelink.exe_offset + link_target.len ..]);
 }
 
-fn getDefaultUrl(allocator: Allocator, compiler_version: []const u8) ![]const u8 {
+/// Tagged releases are hosted at path e.g. download/0.9.1/zig-linux-x86_64-0.9.1.tar.xz
+fn getDefaultDownloadUrl(allocator: Allocator, compiler_version: []const u8) ![]const u8 {
     return try std.fmt.allocPrint(allocator, "https://ziglang.org/download/{s}/zig-" ++ url_platform ++ "-{0s}." ++ archive_ext, .{ compiler_version });
+}
+
+/// Nightly builds are hosted at path e.g. builds/zig-macos-x86_64-0.10.0-dev.1679+d227f76af.tar.xz
+fn getDefaultBuildUrl(allocator: Allocator, compiler_version: []const u8) ![]const u8 {
+    return try std.fmt.allocPrint(allocator, "https://ziglang.org/builds/zig-" ++ url_platform ++ "-{0s}." ++ archive_ext, .{ compiler_version });
 }
 
 fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const u8) !void {
