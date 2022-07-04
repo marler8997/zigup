@@ -12,7 +12,7 @@ export var zig_exe_string: [exe_marker_len + std.fs.MAX_PATH_BYTES + 1]u8 =
     ("!!!THIS MARKS THE zig_exe_string MEMORY!!#" ++ ([1]u8 {0} ** (std.fs.MAX_PATH_BYTES + 1))).*;
 
 const global = struct {
-    var child: *std.ChildProcess = undefined;
+    var child: std.ChildProcess = undefined;
     var arena_instance = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     const arena = arena_instance.allocator();
 };
@@ -42,8 +42,7 @@ pub fn main() !u8 {
     args[0] = zig_exe;
 
     // NOTE: create the ChildProcess before calling SetConsoleCtrlHandler because it uses it
-    global.child = try std.ChildProcess.init(args, global.arena);
-    defer global.child.deinit();
+    global.child = std.ChildProcess.init(args, global.arena);
 
     if (0 == win32.SetConsoleCtrlHandler(consoleCtrlHandler, 1)) {
         log.err("SetConsoleCtrlHandler failed, error={}", .{win32.GetLastError()});

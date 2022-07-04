@@ -337,8 +337,7 @@ pub fn runCompiler(allocator: Allocator, args: []const []const u8) !u8 {
     try argv.appendSlice(args[1..]);
 
     // TODO: use "execve" if on linux
-    const proc = try std.ChildProcess.init(argv.items, allocator);
-    defer proc.deinit();
+    var proc = std.ChildProcess.init(argv.items, allocator);
     const ret_val = try proc.spawnAndWait();
     switch (ret_val) {
         .Exited => |code| return code,
@@ -875,8 +874,16 @@ fn createExeLink(link_target: []const u8, path_link: []const u8) !void {
     try file.writer().writeAll(win32exelink.content[win32exelink.exe_offset + link_target.len ..]);
 }
 
+const VersionKind = enum { release, dev };
+fn determineVersionKind(version: []const u8) VersionKind {
+    return if (std.mem.indexOfAny(u8, version, "-+")) |_| .dev else .release;
+}
+
 fn getDefaultUrl(allocator: Allocator, compiler_version: []const u8) ![]const u8 {
-    return try std.fmt.allocPrint(allocator, "https://ziglang.org/download/{s}/zig-" ++ url_platform ++ "-{0s}." ++ archive_ext, .{ compiler_version });
+    return switch (determineVersionKind(compiler_version)) {
+        .dev => try std.fmt.allocPrint(allocator, "https://ziglang.org/builds/zig-" ++ url_platform ++ "-{0s}." ++ archive_ext, .{ compiler_version }),
+        .release => try std.fmt.allocPrint(allocator, "https://ziglang.org/download/{s}/zig-" ++ url_platform ++ "-{0s}." ++ archive_ext, .{ compiler_version }),
+    };
 }
 
 fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const u8) !void {
@@ -958,8 +965,7 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
 
 pub fn run(allocator: Allocator, argv: []const []const u8) !std.ChildProcess.Term {
     try logRun(allocator, argv);
-    var proc = try std.ChildProcess.init(argv, allocator);
-    defer proc.deinit();
+    var proc = std.ChildProcess.init(argv, allocator);
     return proc.spawnAndWait();
 }
 

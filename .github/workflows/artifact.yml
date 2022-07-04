@@ -1,5 +1,5 @@
 name: Artifacts
-on: [push, pull_request]
+on: [pull_request]
 jobs:
   test:
     strategy:
@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: goto-bus-stop/setup-zig@v1
         with:
-          version: 0.10.0-dev.555+1b6a1e691
+          version: 0.10.0-dev.2836+2360f8c49
       - run: |
           zig build test -Dfetch -Dci_target=${{matrix.os}}
         shell: bash

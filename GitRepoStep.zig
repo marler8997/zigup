@@ -1,4 +1,4 @@
-//! Publish Date: 2021_10_17
+//! Publish Date: 2022_05_05
 //! This file is hosted at github.com/marler8997/zig-build-repos and is meant to be copied
 //! to projects that use it.
 const std = @import("std");
@@ -33,7 +33,7 @@ fetch_enabled: bool,
 
 var cached_default_fetch_option: ?bool = null;
 pub fn defaultFetchOption(b: *std.build.Builder) bool {
-    if (cached_default_fetch_option) |_| { } else {
+    if (cached_default_fetch_option) |_| {} else {
         cached_default_fetch_option = if (b.option(bool, "fetch", "automatically fetch network resources")) |o| o else false;
     }
     return cached_default_fetch_option.?;
@@ -49,20 +49,18 @@ pub fn create(b: *std.build.Builder, opt: struct {
 }) *GitRepoStep {
     var result = b.allocator.create(GitRepoStep) catch @panic("memory");
     const name = std.fs.path.basename(opt.url);
-    result.* = GitRepoStep {
+    result.* = GitRepoStep{
         .step = std.build.Step.init(.custom, "clone a git repository", b.allocator, make),
         .builder = b,
         .url = opt.url,
         .name = name,
         .branch = opt.branch,
         .sha = opt.sha,
-        .path = if (opt.path) |p| (b.allocator.dupe(u8, p) catch @panic("memory")) else (
-            std.fs.path.resolve(b.allocator, &[_][]const u8{
-                b.build_root,
-                "dep", 
-                name,
-            })
-        ) catch @panic("memory"),
+        .path = if (opt.path) |p| (b.allocator.dupe(u8, p) catch @panic("memory")) else (std.fs.path.resolve(b.allocator, &[_][]const u8{
+            b.build_root,
+            "dep",
+            name,
+        })) catch @panic("memory"),
         .sha_check = opt.sha_check,
         .fetch_enabled = if (opt.fetch_enabled) |fe| fe else defaultFetchOption(b),
     };
@@ -72,7 +70,7 @@ pub fn create(b: *std.build.Builder, opt: struct {
 // TODO: this should be included in std.build, it helps find bugs in build files
 fn hasDependency(step: *const std.build.Step, dep_candidate: *const std.build.Step) bool {
     for (step.dependencies.items) |dep| {
-         // TODO: should probably use step.loop_flag to prevent infinite recursion
+        // TODO: should probably use step.loop_flag to prevent infinite recursion
         //       when a circular reference is encountered, or maybe keep track of
         //       the steps encounterd with a hash set
         if (dep == dep_candidate or hasDependency(dep, dep_candidate))
@@ -85,12 +83,17 @@ fn make(step: *std.build.Step) !void {
     const self = @fieldParentPtr(GitRepoStep, "step", step);
 
     std.fs.accessAbsolute(self.path, .{}) catch {
-        const branch_args = if (self.branch) |b| &[2][]const u8 {" -b ", b} else &[2][]const u8 {"", ""};
+        const branch_args = if (self.branch) |b| &[2][]const u8{ " -b ", b } else &[2][]const u8{ "", "" };
         if (!self.fetch_enabled) {
             std.debug.print("Error: git repository '{s}' does not exist\n", .{self.path});
             std.debug.print("       Use -Dfetch to download it automatically, or run the following to clone it:\n", .{});
-            std.debug.print("       git clone {s}{s}{s} {s} && git -C {3s} checkout {s} -b fordep\n",
-                .{self.url, branch_args[0], branch_args[1], self.path, self.sha});
+            std.debug.print("       git clone {s}{s}{s} {s} && git -C {3s} checkout {s} -b fordep\n", .{
+                self.url,
+                branch_args[0],
+                branch_args[1],
+                self.path,
+                self.sha,
+            });
             std.os.exit(1);
         }
 
@@ -109,9 +112,10 @@ fn make(step: *std.build.Step) !void {
             }
             try run(self.builder, args.items);
         }
-        try run(self.builder, &[_][]const u8 {
+        try run(self.builder, &[_][]const u8{
             "git",
-            "-C", self.path,
+            "-C",
+            self.path,
             "checkout",
             self.sha,
             "-b",
@@ -129,9 +133,10 @@ fn checkSha(self: GitRepoStep) !void {
     const result: union(enum) { failed: anyerror, output: []const u8 } = blk: {
         const result = std.ChildProcess.exec(.{
             .allocator = self.builder.allocator,
-            .argv = &[_][]const u8 {
+            .argv = &[_][]const u8{
                 "git",
-                "-C", self.path,
+                "-C",
+                self.path,
                 "rev-parse",
                 "HEAD",
             },
@@ -151,11 +156,11 @@ fn checkSha(self: GitRepoStep) !void {
     };
     switch (result) {
         .failed => |err| {
-            return self.sha_check.reportFail("failed to retreive sha for repository '{s}': {s}", .{self.name, @errorName(err)});
+            return self.sha_check.reportFail("failed to retreive sha for repository '{s}': {s}", .{ self.name, @errorName(err) });
         },
         .output => |output| {
             if (!std.mem.eql(u8, std.mem.trimRight(u8, output, "\n\r"), self.sha)) {
-                return self.sha_check.reportFail("repository '{s}' sha does not match\nexpected: {s}\nactual  : {s}\n", .{self.name, self.sha, output});
+                return self.sha_check.reportFail("repository '{s}' sha does not match\nexpected: {s}\nactual  : {s}\n", .{ self.name, self.sha, output });
             }
         },
     }
@@ -168,16 +173,13 @@ fn run(builder: *std.build.Builder, argv: []const []const u8) !void {
         const writer = msg.writer();
         var prefix: []const u8 = "";
         for (argv) |arg| {
-            try writer.print("{s}\"{s}\"", .{prefix, arg});
+            try writer.print("{s}\"{s}\"", .{ prefix, arg });
             prefix = " ";
         }
         std.log.info("[RUN] {s}", .{msg.items});
     }
 
-
-    const child = try std.ChildProcess.init(argv, builder.allocator);
-    defer child.deinit();
-
+    var child = std.ChildProcess.init(argv, builder.allocator);
     child.stdin_behavior = .Ignore;
     child.stdout_behavior = .Inherit;
     child.stderr_behavior = .Inherit;

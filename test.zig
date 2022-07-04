@@ -7,7 +7,7 @@ const path_env_sep = if (builtin.os.tag == .windows) ";" else ":";
 
 const fixdeletetree = @import("fixdeletetree.zig");
 
-var child_env_map: std.BufMap = undefined;
+var child_env_map: std.process.EnvMap = undefined;
 var path_env_ptr: *[]const u8 = undefined;
 fn setPathEnv(new_path: []const u8) void {
     path_env_ptr.* = new_path;
@@ -42,7 +42,7 @@ pub fn main() !u8 {
 
     // add our scratch/bin directory to PATH
     child_env_map = try std.process.getEnvMap(allocator);
-    path_env_ptr = bufMapGetEnvPtr(child_env_map, "PATH") orelse {
+    path_env_ptr = child_env_map.getPtr("PATH") orelse {
         std.log.err("the PATH environment variable does not exist?", .{});
         return 1;
     };
@@ -205,6 +205,8 @@ pub fn main() !u8 {
             try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, " is lower priority in PATH than "));
         }
     }
+    // verify a dev build
+    try runNoCapture(zigup_args ++ &[_][]const u8 { "0.10.0-dev.2836+2360f8c49" });
 
     std.log.info("Success", .{});
     return 0;
@@ -276,16 +278,4 @@ fn execResultPassed(term: std.ChildProcess.Term) bool {
         .Exited => |code| return code == 0,
         else => return false,
     }
-}
-
-fn bufMapGetEnvPtr(buf_map: std.BufMap, env_name: []const u8) ?*[]const u8 {
-    if (builtin.os.tag == .windows) {
-        var it = buf_map.iterator();
-        while (it.next()) |kv| {
-            if (std.ascii.eqlIgnoreCase(env_name, kv.key_ptr.*)) {
-                return kv.value_ptr;
-            }
-        }
-    }
-    return buf_map.getPtr(env_name);
 }

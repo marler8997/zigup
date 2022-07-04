@@ -120,7 +120,7 @@ fn addZigupExe(
         const zarc_repo_path = zarc_repo.getPath(&exe.step);
         exe.addPackage(Pkg {
             .name = "zarc",
-            .path = .{ .path = try join(b, &[_][]const u8 { zarc_repo_path, "src", "main.zig" }) },
+            .source = .{ .path = try join(b, &[_][]const u8 { zarc_repo_path, "src", "main.zig" }) },
         });
     }
 
