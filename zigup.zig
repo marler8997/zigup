@@ -15,6 +15,7 @@ const fixdeletetree = @import("fixdeletetree.zig");
 const arch = switch(builtin.cpu.arch) {
     .x86_64 => "x86_64",
     .aarch64 => "aarch64",
+    .riscv64 => "riscv64",
     else => @compileError("Unsupported CPU Architecture"),
 };
 const os = switch(builtin.os.tag) {
