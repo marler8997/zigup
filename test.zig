@@ -83,37 +83,37 @@ pub fn main() !u8 {
         try testing.expect(std.mem.containsAtLeast(u8, result.stdout, 1, "master"));
     }
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"default", "0.5.0"});
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"default", "0.7.0"});
         defer { allocator.free(result.stdout); allocator.free(result.stderr); }
         dumpExecResult(result);
         switch (result.term) {
             .Exited => |code| try testing.expectEqual(@as(u8, 1), code),
             else => |term| std.debug.panic("unexpected exit {}", .{term}),
         }
-        try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "error: compiler '0.5.0' is not installed\n"));
+        try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "error: compiler '0.7.0' is not installed\n"));
     }
-    try runNoCapture(zigup_args ++ &[_][]const u8 {"0.5.0"});
+    try runNoCapture(zigup_args ++ &[_][]const u8 {"0.7.0"});
     {
         const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"default"});
         defer { allocator.free(result.stdout); allocator.free(result.stderr); }
         try passOrDumpAndThrow(result);
         dumpExecResult(result);
-        try testing.expect(std.mem.eql(u8, result.stdout, "0.5.0\n"));
+        try testing.expect(std.mem.eql(u8, result.stdout, "0.7.0\n"));
     }
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"fetch", "0.5.0"});
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"fetch", "0.7.0"});
         defer { allocator.free(result.stdout); allocator.free(result.stderr); }
         try passOrDumpAndThrow(result);
         try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "already installed"));
     }
     try runNoCapture(zigup_args ++ &[_][]const u8 {"master"});
-    try runNoCapture(zigup_args ++ &[_][]const u8 {"0.6.0"});
+    try runNoCapture(zigup_args ++ &[_][]const u8 {"0.8.0"});
     {
         const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"default"});
         defer { allocator.free(result.stdout); allocator.free(result.stderr); }
         try passOrDumpAndThrow(result);
         dumpExecResult(result);
-        try testing.expect(std.mem.eql(u8, result.stdout, "0.6.0\n"));
+        try testing.expect(std.mem.eql(u8, result.stdout, "0.8.0\n"));
     }
     {
         const save_path_env = path_env_ptr.*;
@@ -128,22 +128,22 @@ pub fn main() !u8 {
         const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"list"});
         defer { allocator.free(result.stdout); allocator.free(result.stderr); }
         try passOrDumpAndThrow(result);
-        try testing.expect(std.mem.containsAtLeast(u8, result.stdout, 1, "0.5.0"));
-        try testing.expect(std.mem.containsAtLeast(u8, result.stdout, 1, "0.6.0"));
+        try testing.expect(std.mem.containsAtLeast(u8, result.stdout, 1, "0.7.0"));
+        try testing.expect(std.mem.containsAtLeast(u8, result.stdout, 1, "0.8.0"));
     }
-    try runNoCapture(zigup_args ++ &[_][]const u8 {"default", "0.5.0"});
+    try runNoCapture(zigup_args ++ &[_][]const u8 {"default", "0.7.0"});
     try testing.expectEqual(@as(u32, 3), try getCompilerCount(install_dir));
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"run", "0.6.0", "version"});
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"run", "0.8.0", "version"});
         defer { allocator.free(result.stdout); allocator.free(result.stderr); }
-        try testing.expectEqualSlices(u8, "0.6.0\n", result.stdout);
+        try testing.expectEqualSlices(u8, "0.8.0\n", result.stdout);
     }
     {
         const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"run", "doesnotexist", "version"});
         defer { allocator.free(result.stdout); allocator.free(result.stderr); }
         try testing.expectEqualSlices(u8, "error: compiler 'doesnotexist' does not exist, fetch it first with: zigup fetch doesnotexist\n", result.stderr);
     }
-    try runNoCapture(zigup_args ++ &[_][]const u8 {"keep", "0.6.0"});
+    try runNoCapture(zigup_args ++ &[_][]const u8 {"keep", "0.8.0"});
     // doesn't delete anything because we have keepfile and master doens't get deleted
     try runNoCapture(zigup_args ++ &[_][]const u8 {"clean"});
     try testing.expectEqual(@as(u32, 3), try getCompilerCount(install_dir));
@@ -155,11 +155,11 @@ pub fn main() !u8 {
     try testing.expectEqual(@as(u32, 3), try getCompilerCount(install_dir));
 
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"clean", "0.6.0"});
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"clean", "0.8.0"});
         defer { allocator.free(result.stdout); allocator.free(result.stderr); }
         try passOrDumpAndThrow(result);
         try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "deleting "));
-        try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "0.6.0"));
+        try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "0.8.0"));
     }
     try testing.expectEqual(@as(u32, 2), try getCompilerCount(install_dir));
 
@@ -200,7 +200,7 @@ pub fn main() !u8 {
         defer setPathEnv(previous_path);
 
         {
-            const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"default", "0.5.0"});
+            const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"default", "0.7.0"});
             defer { allocator.free(result.stdout); allocator.free(result.stderr); }
             try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, " is lower priority in PATH than "));
         }
