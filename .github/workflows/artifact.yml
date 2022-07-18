@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: goto-bus-stop/setup-zig@v1
         with:
-          version: 0.10.0-dev.2836+2360f8c49
+          version: 0.10.0-dev.3027+0e26c6149
       - run: |
           zig build test -Dfetch -Dci_target=${{matrix.os}}
         shell: bash

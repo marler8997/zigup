@@ -213,7 +213,7 @@ pub fn main() !u8 {
 }
 
 fn getCompilerCount(install_dir: []const u8) !u32 {
-    var dir = try std.fs.cwd().openDir(install_dir, .{.iterate=true});
+    var dir = try std.fs.cwd().openIterableDir(install_dir, .{});
     defer dir.close();
     var it = dir.iterate();
     var count: u32 = 0;

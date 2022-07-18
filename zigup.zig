@@ -281,12 +281,12 @@ pub fn main2() !u8 {
                     break :init_resolved version_string;
 
                 var optional_master_dir: ?[]const u8 = blk: {
-                    var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
+                    var install_dir = std.fs.openIterableDirAbsolute(install_dir_string, .{}) catch |e| switch (e) {
                         error.FileNotFound => break :blk null,
                         else => return e,
                     };
                     defer install_dir.close();
-                    break :blk try getMasterDir(allocator, &install_dir);
+                    break :blk try getMasterDir(allocator, &install_dir.dir);
                 };
                 // no need to free master_dir, this is a short lived program
                 break :init_resolved optional_master_dir orelse {
@@ -493,7 +493,7 @@ fn listCompilers(allocator: Allocator) !void {
     const install_dir_string = try getInstallDir(allocator, .{ .create = false });
     defer allocator.free(install_dir_string);
 
-    var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
+    var install_dir = std.fs.openIterableDirAbsolute(install_dir_string, .{ }) catch |e| switch (e) {
         error.FileNotFound => return,
         else => return e,
     };
@@ -516,10 +516,10 @@ fn keepCompiler(allocator: Allocator, compiler_version: []const u8) !void {
     const install_dir_string = try getInstallDir(allocator, .{ .create = true });
     defer allocator.free(install_dir_string);
 
-    var install_dir = try std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true });
+    var install_dir = try std.fs.openIterableDirAbsolute(install_dir_string, .{ });
     defer install_dir.close();
 
-    var compiler_dir = install_dir.openDir(compiler_version, .{}) catch |e| switch (e) {
+    var compiler_dir = install_dir.dir.openDir(compiler_version, .{}) catch |e| switch (e) {
         error.FileNotFound => {
             std.log.err("compiler not found: {s}", .{compiler_version});
             return error.AlreadyReported;
@@ -538,12 +538,12 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
     const default_comp_opt = try getDefaultCompiler(allocator);
     defer if (default_comp_opt) |default_compiler| allocator.free(default_compiler);
 
-    var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
+    var install_dir = std.fs.openIterableDirAbsolute(install_dir_string, .{}) catch |e| switch (e) {
         error.FileNotFound => return,
         else => return e,
     };
     defer install_dir.close();
-    const master_points_to_opt = try getMasterDir(allocator, &install_dir);
+    const master_points_to_opt = try getMasterDir(allocator, &install_dir.dir);
     defer if (master_points_to_opt) |master_points_to| allocator.free(master_points_to);
     if (compiler_name_opt) |compiler_name| {
         if (getKeepReason(master_points_to_opt, default_comp_opt, compiler_name)) |reason| {
@@ -551,7 +551,7 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
             return error.AlreadyReported;
         }
         loginfo("deleting '{s}{c}{s}'", .{ install_dir_string, std.fs.path.sep, compiler_name });
-        try fixdeletetree.deleteTree(install_dir, compiler_name);
+        try fixdeletetree.deleteTree(install_dir.dir, compiler_name);
     } else {
         var it = install_dir.iterate();
         while (try it.next()) |entry| {
@@ -563,7 +563,7 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
             }
 
             {
-                var compiler_dir = try install_dir.openDir(entry.name, .{});
+                var compiler_dir = try install_dir.dir.openDir(entry.name, .{});
                 defer compiler_dir.close();
                 if (compiler_dir.access("keep", .{})) |_| {
                     loginfo("keeping '{s}' (has keep file)", .{entry.name});
@@ -574,7 +574,7 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
                 }
             }
             loginfo("deleting '{s}{c}{s}'", .{ install_dir_string, std.fs.path.sep, entry.name });
-            try fixdeletetree.deleteTree(install_dir, entry.name);
+            try fixdeletetree.deleteTree(install_dir.dir, entry.name);
         }
     }
 }
