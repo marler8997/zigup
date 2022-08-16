@@ -424,12 +424,17 @@ fn fetchDownloadIndex(allocator: Allocator) !DownloadIndex {
 }
 
 fn loggyMakeDirAbsolute(dir_absolute: []const u8) !void {
+    std.fs.makeDirAbsolute(dir_absolute) catch |e| {
+        if (e == error.PathAlreadyExists) {
+            return;
+        }
+        return e;
+    };
     if (builtin.os.tag == .windows) {
         loginfo("mkdir \"{s}\"", .{dir_absolute});
     } else {
         loginfo("mkdir '{s}'", .{dir_absolute});
     }
-    try std.fs.makeDirAbsolute(dir_absolute);
 }
 
 fn loggyDeleteTreeAbsolute(dir_absolute: []const u8) !void {
