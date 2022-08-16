@@ -92,7 +92,7 @@ fn allocInstallDirString(allocator: Allocator) ![]const u8 {
         std.log.err("$HOME environment variable '{s}' is not an absolute path", .{home});
         return error.BadHomeEnvironmentVariable;
     }
-    return std.fs.path.join(allocator, &[_][]const u8{ home, "zig" });
+    return std.fs.path.join(allocator, &[_][]const u8{ home, ".local", "share", "zig" });
 }
 const GetInstallDirOptions = struct {
     create: bool,
