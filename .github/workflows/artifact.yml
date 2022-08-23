@@ -4,6 +4,7 @@ jobs:
   test:
     strategy:
       matrix:
+        arch: [x86_64, aarch64]
         os: [ubuntu-latest, macos-latest, windows-latest]
       fail-fast: false
     runs-on: ${{matrix.os}}
@@ -13,9 +14,12 @@ jobs:
         with:
           version: 0.10.0-dev.3027+0e26c6149
       - run: |
-          zig build test -Dfetch -Dci_target=${{matrix.os}}
+          zig build test -Dfetch -Dci_target=${{matrix.os}}-x86_64
+      - if: matrix.arch != 'x86_64'
+        run: |
+          zig build -Dfetch -Dci_target=${{matrix.os}}-${{matrix.arch}}
         shell: bash
       - uses: actions/upload-artifact@v2
         with:
-          name: zigup ${{ matrix.os }}
+          name: zigup ${{ matrix.os }}-${{ matrix.arch }}
           path: zig-out/bin/*
