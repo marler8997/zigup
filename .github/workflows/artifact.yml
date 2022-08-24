@@ -19,11 +19,17 @@ jobs:
         with:
           version: 0.10.0-dev.3027+0e26c6149
       - run: |
-          zig build test -Dfetch -Dci_target=${{matrix.os}}-x86_64
-      - if: matrix.arch != 'x86_64'
-        run: |
-          zig build -Dfetch -Dci_target=${{matrix.os}}-${{matrix.arch}}
-        shell: bash
+          zig build test -Dfetch -Dci_target=${{matrix.os}}-${{matrix.arch}}
+      - run: |
+          zig build -Dfetch -Dci_target=ubuntu-latest-x86_64 -p zig-out-ubuntu-x86_64
+      - run: |
+          zig build -Dfetch -Dci_target=ubuntu-latest-aarch64 -p zig-out-ubuntu-aarch64
+      - run: |
+          zig build -Dfetch -Dci_target=macos-latest-x86_64 -p zig-out-macos-x86_64
+      - run: |
+          zig build -Dfetch -Dci_target=macos-latest-aarch64 -p zig-out-macos-aarch64
+      - run: |
+          zig build -Dfetch -Dci_target=windows-latest-x86_64 -p zig-out-windows-x86_64
       - uses: actions/upload-artifact@v2
         with:
           name: zigup ${{ matrix.os }}-${{ matrix.arch }}
