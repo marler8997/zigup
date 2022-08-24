@@ -199,5 +199,4 @@ const ci_target_map = std.ComptimeStringMap([]const u8, .{
     .{ "windows-latest-x86_64", "x86_64-windows" },
     .{ "ubuntu-latest-aarch64", "aarch64-linux" },
     .{ "macos-latest-aarch64", "aarch64-macos" },
-    .{ "windows-latest-aarch64", "aarch64-windows" },
 });
