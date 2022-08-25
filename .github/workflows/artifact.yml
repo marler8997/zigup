@@ -6,11 +6,6 @@ jobs:
       matrix:
         arch: [x86_64]
         os: [ubuntu-latest, macos-latest, windows-latest]
-        include:
-          - arch: aarch64
-            os: ubuntu-latest
-          - arch: aarch64
-            os: macos-latest
       fail-fast: false
     runs-on: ${{matrix.os}}
     steps:
@@ -21,16 +16,21 @@ jobs:
       - run: |
           zig build test -Dfetch -Dci_target=${{matrix.os}}-${{matrix.arch}}
       - run: |
-          zig build -Dfetch -Dci_target=ubuntu-latest-x86_64 -p zig-out-ubuntu-x86_64
+          zig build -Dfetch -Dci_target=ubuntu-latest-x86_64 -p zig-out-ubuntu-latest-x86_64
       - run: |
-          zig build -Dfetch -Dci_target=ubuntu-latest-aarch64 -p zig-out-ubuntu-aarch64
+          zig build -Dfetch -Dci_target=ubuntu-latest-aarch64 -p zig-out-ubuntu-latest-aarch64
       - run: |
-          zig build -Dfetch -Dci_target=macos-latest-x86_64 -p zig-out-macos-x86_64
+          zig build -Dfetch -Dci_target=macos-latest-x86_64 -p zig-out-macos-latest-x86_64
       - run: |
-          zig build -Dfetch -Dci_target=macos-latest-aarch64 -p zig-out-macos-aarch64
+          zig build -Dfetch -Dci_target=macos-latest-aarch64 -p zig-out-macos-latest-aarch64
       - run: |
-          zig build -Dfetch -Dci_target=windows-latest-x86_64 -p zig-out-windows-x86_64
+          zig build -Dfetch -Dci_target=windows-latest-x86_64 -p zig-out-windows-latest-x86_64
       - uses: actions/upload-artifact@v2
         with:
           name: zigup ${{ matrix.os }}-${{ matrix.arch }}
           path: zig-out/bin/*
+      - if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: zigup ${{ matrix.os }}-aarch64
+          path: zig-out-${{matrix.os}}-aarch64/bin/*
