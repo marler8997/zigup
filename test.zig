@@ -24,9 +24,9 @@ pub fn main() !u8 {
     try std.fs.cwd().makeDir(install_dir);
 
     // NOTE: for now we are incorrectly assuming the install dir is CWD/zig-out
-    const zigup = "." ++ sep ++ bin_dir ++ sep ++ "zigup" ++ builtin.target.exeFileExt();
+    const zigup = comptime "." ++ sep ++ bin_dir ++ sep ++ "zigup" ++ builtin.target.exeFileExt();
     try std.fs.cwd().copyFile(
-        "zig-out" ++ sep ++ "bin" ++ sep ++ "zigup" ++ builtin.target.exeFileExt(),
+        comptime "zig-out" ++ sep ++ "bin" ++ sep ++ "zigup" ++ builtin.target.exeFileExt(),
         std.fs.cwd(),
         zigup,
         .{},
@@ -191,7 +191,7 @@ pub fn main() !u8 {
         defer allocator.free(scratch_bin2_path);
 
         {
-            var file = try std.fs.cwd().createFile(bin2_dir ++ sep ++ "zig" ++ builtin.target.exeFileExt(), .{});
+            var file = try std.fs.cwd().createFile(comptime bin2_dir ++ sep ++ "zig" ++ builtin.target.exeFileExt(), .{});
             defer file.close();
             try file.writer().writeAll("a fake executable");
         }

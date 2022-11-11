@@ -123,7 +123,7 @@ fn makeZigPathLinkString(allocator: Allocator) ![]const u8 {
     const zigup_dir = try std.fs.selfExeDirPathAlloc(allocator);
     defer allocator.free(zigup_dir);
 
-    return try std.fs.path.join(allocator, &[_][]const u8{ zigup_dir, "zig" ++ builtin.target.exeFileExt() });
+    return try std.fs.path.join(allocator, &[_][]const u8{ zigup_dir, comptime "zig" ++ builtin.target.exeFileExt() });
 }
 
 // TODO: this should be in standard lib
@@ -334,7 +334,7 @@ pub fn runCompiler(allocator: Allocator, args: []const []const u8) !u8 {
     }
 
     var argv = std.ArrayList([]const u8).init(allocator);
-    try argv.append(try std.fs.path.join(allocator, &.{ compiler_dir, "files", "zig" ++ builtin.target.exeFileExt() }));
+    try argv.append(try std.fs.path.join(allocator, &.{ compiler_dir, "files", comptime "zig" ++ builtin.target.exeFileExt() }));
     try argv.appendSlice(args[1..]);
 
     // TODO: use "execve" if on linux
@@ -658,13 +658,14 @@ fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, exist_veri
     switch (exist_verify) {
         .existence_verified => {},
         .verify_existence => {
-            (std.fs.openDirAbsolute(compiler_dir, .{}) catch |err| switch (err) {
+            var dir = std.fs.openDirAbsolute(compiler_dir, .{}) catch |err| switch (err) {
                 error.FileNotFound => {
                     std.log.err("compiler '{s}' is not installed", .{std.fs.path.basename(compiler_dir)});
                     return error.AlreadyReported;
                 },
                 else => |e| return e,
-            }).close();
+            };
+            dir.close();
         },
     }
 
@@ -673,7 +674,7 @@ fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, exist_veri
 
     try verifyPathLink(allocator, path_link);
 
-    const link_target = try std.fs.path.join(allocator, &[_][]const u8{ compiler_dir, "files", "zig" ++ builtin.target.exeFileExt() });
+    const link_target = try std.fs.path.join(allocator, &[_][]const u8{ compiler_dir, "files", comptime "zig" ++ builtin.target.exeFileExt() });
     defer allocator.free(link_target);
     if (builtin.os.tag == .windows) {
         try createExeLink(link_target, path_link);
@@ -843,7 +844,7 @@ const win32 = struct {
         nFileIndexHigh: u32,
         nFileIndexLow: u32,
     };
-    pub extern "KERNEL32" fn GetFileInformationByHandle(
+    pub extern "kernel32" fn GetFileInformationByHandle(
         hFile: ?@import("std").os.windows.HANDLE,
         lpFileInformation: ?*BY_HANDLE_FILE_INFORMATION,
     ) callconv(@import("std").os.windows.WINAPI) BOOL;
