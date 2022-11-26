@@ -29,7 +29,7 @@ zigup clean [<version>]
 # mark a compiler to keep
 zigup keep <version>
 
-# run a specific version of the copmiler
+# run a specific version of the compiler
 zigup run <version> <args>...
 ```
 
