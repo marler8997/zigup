@@ -7,7 +7,6 @@ const build_options = @import("build_options");
 const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
 
-const ziget = @import("ziget");
 const zarc = @import("zarc");
 
 const fixdeletetree = @import("fixdeletetree.zig");
@@ -39,22 +38,40 @@ fn loginfo(comptime fmt: []const u8, args: anytype) void {
 }
 
 fn download(allocator: Allocator, url: []const u8, writer: anytype) !void {
-    var download_options = ziget.request.DownloadOptions{
-        .flags = 0,
+    const uri = std.Uri.parse(url) catch unreachable;
+
+    var client = std.http.Client{
         .allocator = allocator,
-        .maxRedirects = 10,
-        .forwardBufferSize = 4096,
-        .maxHttpResponseHeaders = 8192,
-        .onHttpRequest = ignoreHttpCallback,
-        .onHttpResponse = ignoreHttpCallback,
     };
-    var dowload_state = ziget.request.DownloadState.init();
-    try ziget.request.download(
-        ziget.url.parseUrl(url) catch unreachable,
-        writer,
-        download_options,
-        &dowload_state,
-    );
+    defer client.deinit();
+
+    var request = try client.request(uri, .{}, .{});
+    defer request.deinit();
+
+    // TODO: the old ziget version allow a writer to be provided,
+    //       now I need to have my own buffer, is this less efficient?
+//    var download_options = ziget.request.DownloadOptions{
+//        .flags = 0,
+//        .allocator = allocator,
+//        .maxRedirects = 10,
+//        .forwardBufferSize = 4096,
+//        .maxHttpResponseHeaders = 8192,
+//        .onHttpRequest = ignoreHttpCallback,
+//        .onHttpResponse = ignoreHttpCallback,
+//    };
+//    var dowload_state = ziget.request.DownloadState.init();
+//    try ziget.request.download(
+//        ziget.url.parseUrl(url) catch unreachable,
+//        writer,
+//        download_options,
+//        &dowload_state,
+//    );
+    while (true) {
+        var buf: [4096]u8 = undefined;
+        const len = try request.read(&buf);
+        if (len == 0) break;
+        try writer.writeAll(buf[0 .. len]);
+    }
 }
 
 fn downloadToFileAbsolute(allocator: Allocator, url: []const u8, file_absolute: []const u8) !void {
@@ -908,13 +925,13 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
         defer allocator.free(archive_absolute);
         loginfo("downloading '{s}' to '{s}'", .{ url, archive_absolute });
         downloadToFileAbsolute(allocator, url, archive_absolute) catch |e| switch (e) {
-            error.HttpNon200StatusCode => {
-                // TODO: more information would be good
-                std.log.err("HTTP request failed (TODO: improve ziget library to get better error)", .{});
-                // this removes the installing dir if the http request fails so we dont have random directories
-                try loggyDeleteTreeAbsolute(installing_dir);
-                return error.AlreadyReported;
-            },
+//            error.HttpNon200StatusCode => {
+//                // TODO: more information would be good
+//                std.log.err("HTTP request failed (TODO: improve ziget library to get better error)", .{});
+//                // this removes the installing dir if the http request fails so we dont have random directories
+//                try loggyDeleteTreeAbsolute(installing_dir);
+//                return error.AlreadyReported;
+//            },
             else => return e,
         };
 
