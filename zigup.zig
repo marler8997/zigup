@@ -595,7 +595,7 @@ fn readDefaultCompiler(allocator: Allocator, buffer: *[std.fs.MAX_PATH_BYTES + 1
             std.log.err("path link file '{s}' is too small", .{path_link});
             return error.AlreadyReported;
         }
-        const target_exe = std.mem.span(std.meta.assumeSentinel(@as([]u8, buffer).ptr, 0));
+        const target_exe = std.mem.sliceTo(buffer, 0);
         return try allocator.dupe(u8, targetPathToVersion(target_exe));
     }
 
