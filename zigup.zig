@@ -8,7 +8,7 @@ const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
 
 const ziget = @import("ziget");
-const zarc = @import("zarc");
+const zig_archive = @import("zig-archive");
 
 const fixdeletetree = @import("fixdeletetree.zig");
 
@@ -934,10 +934,11 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
                     var timer = try std.time.Timer.start();
                     var archive_file = try std.fs.openFileAbsolute(archive_absolute, .{});
                     defer archive_file.close();
-                    const reader = archive_file.reader();
-                    var archive = try zarc.zip.load(allocator, reader);
-                    defer archive.deinit(allocator);
-                    _ = try archive.extract(reader, installing_dir_opened, .{});
+                    var stream = std.io.StreamSource{ .file = archive_file };
+                    var archive_reader = zig_archive.formats.zip.reader.ArchiveReader.init(allocator, &stream);
+                    defer archive_reader.deinit();
+                    try archive_reader.load();
+                    //_ = try archive_reader.extract(reader, installing_dir_opened, .{});
                     const time = timer.read();
                     loginfo("extracted archive in {d:.2} s", .{@intToFloat(f32, time) / @intToFloat(f32, std.time.ns_per_s)});
                 }

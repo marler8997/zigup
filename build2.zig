@@ -140,16 +140,16 @@ fn addZigupExe(
     zigetbuild.addZigetPkg(exe, ssl_backend, ziget_repo.getPath(&exe.step));
 
     if (targetIsWindows(target)) {
-        const zarc_repo = GitRepoStep.create(b, .{
-            .url = "https://github.com/marler8997/zarc",
-            .branch = "protected",
-            .sha = "ca9554ffbfceedec6aae5f39fc71a52dbdec2a15",
+        const zig_archive_repo = GitRepoStep.create(b, .{
+            .url = "https://github.com/truemedian/zig-archive",
+            .branch = null,
+            .sha = "eae4544dd3d3b7ce05ab45a953f5a8302440c570",
         });
-        exe.step.dependOn(&zarc_repo.step);
-        const zarc_repo_path = zarc_repo.getPath(&exe.step);
+        exe.step.dependOn(&zig_archive_repo.step);
+        const zig_archive_repo_path = zig_archive_repo.getPath(&exe.step);
         exe.addPackage(Pkg {
-            .name = "zarc",
-            .source = .{ .path = try join(b, &[_][]const u8 { zarc_repo_path, "src", "main.zig" }) },
+            .name = "zig-archive",
+            .source = .{ .path = try join(b, &[_][]const u8 { zig_archive_repo_path, "src", "main.zig" }) },
         });
     }
 
