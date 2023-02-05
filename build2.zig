@@ -29,9 +29,7 @@ pub fn build(b: *Builder) !void {
     //}
 
     //var github_release_step = b.step("github-release", "Build the github-release binaries");
-    // TODO: need to implement some interesting logic to make this work without
-    //       having the iguana repo copied into this one
-    //try addGithubReleaseExe(b, github_release_step, ziget_repo, "x86_64-linux", SslBackend.iguana);
+    //try addGithubReleaseExe(b, github_release_step, ziget_repo, "x86_64-linux", .std);
 
     const target = if (b.option([]const u8, "ci_target", "the CI target being built")) |ci_target|
         try std.zig.CrossTarget.parse(.{ .arch_os_abi = ci_target_map.get(ci_target) orelse {
@@ -59,7 +57,7 @@ pub fn build(b: *Builder) !void {
     };
 
     // TODO: Maybe add more executables with different ssl backends
-    const exe = try addZigupExe(b, ziget_repo, target, mode, zigup_build_options, win32exelink, zigetbuild.SslBackend.iguana);
+    const exe = try addZigupExe(b, ziget_repo, target, mode, zigup_build_options, win32exelink, .std);
     exe.install();
 
     const run_cmd = exe.run();
