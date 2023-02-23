@@ -672,8 +672,6 @@ fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, exist_veri
     const path_link = try makeZigPathLinkString(allocator);
     defer allocator.free(path_link);
 
-    try verifyPathLink(allocator, path_link);
-
     const link_target = try std.fs.path.join(allocator, &[_][]const u8{ compiler_dir, "files", comptime "zig" ++ builtin.target.exeFileExt() });
     defer allocator.free(link_target);
     if (builtin.os.tag == .windows) {
@@ -681,6 +679,8 @@ fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, exist_veri
     } else {
         _ = try loggyUpdateSymlink(link_target, path_link, .{});
     }
+
+    try verifyPathLink(allocator, path_link);
 }
 
 /// Verify that path_link will work.  It verifies that `path_link` is
@@ -781,8 +781,7 @@ fn enforceNoZig(path_link: []const u8, exe: []const u8) !void {
     defer file.close();
 
     // todo: on posix systems ignore the file if it is not executable
-    std.log.err("path-link '{s}' is lower priority in PATH than '{s}'", .{path_link, exe});
-    return error.AlreadyReported;
+    std.log.err("zig compiler '{s}' is higher priority in PATH than the path-link '{s}'", .{exe, path_link});
 }
 
 const FileId = struct {
