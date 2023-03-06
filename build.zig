@@ -49,6 +49,6 @@ pub fn addBuild(self: *Builder, build_file: std.build.FileSource, _: struct { })
     run_step.addArg("--build-file");
     run_step.addFileSourceArg(build_file);
     run_step.addArg("--cache-dir");
-    run_step.addArg(self.pathFromRoot(self.cache_root));
+    run_step.addArg(self.cache_root.join(self.allocator, &.{"."}) catch unreachable);
     return run_step;
 }

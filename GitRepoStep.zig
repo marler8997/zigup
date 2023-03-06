@@ -57,7 +57,7 @@ pub fn create(b: *std.build.Builder, opt: struct {
         .branch = opt.branch,
         .sha = opt.sha,
         .path = if (opt.path) |p| (b.allocator.dupe(u8, p) catch @panic("memory")) else (std.fs.path.resolve(b.allocator, &[_][]const u8{
-            b.build_root,
+            b.build_root.join(b.allocator, &.{"."}) catch unreachable,
             "dep",
             name,
         })) catch @panic("memory"),
@@ -140,7 +140,7 @@ fn checkSha(self: GitRepoStep) !void {
                 "rev-parse",
                 "HEAD",
             },
-            .cwd = self.builder.build_root,
+            .cwd = self.builder.build_root.join(self.builder.allocator, &.{"."}) catch unreachable,
             .env_map = self.builder.env_map,
         }) catch |e| break :blk .{ .failed = e };
         try std.io.getStdErr().writer().writeAll(result.stderr);
@@ -183,7 +183,7 @@ fn run(builder: *std.build.Builder, argv: []const []const u8) !void {
     child.stdin_behavior = .Ignore;
     child.stdout_behavior = .Inherit;
     child.stderr_behavior = .Inherit;
-    child.cwd = builder.build_root;
+    child.cwd = builder.build_root.join(builder.allocator, &.{"."}) catch unreachable;
     child.env_map = builder.env_map;
 
     try child.spawn();
