@@ -14,6 +14,9 @@ fn setPathEnv(new_path: []const u8) void {
     std.log.info("PATH={s}", .{new_path});
 }
 
+// For some odd reason, the "zig version" output is different on macos
+const expected_zig_version_0_7_0 = if (builtin.os.tag == .macos) "0.7.0+9af53f8e0" else "0.7.0";
+
 pub fn main() !u8 {
     std.log.info("running test!", .{});
     try fixdeletetree.deleteTree(std.fs.cwd(), "scratch");
@@ -24,9 +27,9 @@ pub fn main() !u8 {
     try std.fs.cwd().makeDir(install_dir);
 
     // NOTE: for now we are incorrectly assuming the install dir is CWD/zig-out
-    const zigup = "." ++ sep ++ bin_dir ++ sep ++ "zigup" ++ builtin.target.exeFileExt();
+    const zigup = comptime "." ++ sep ++ bin_dir ++ sep ++ "zigup" ++ builtin.target.exeFileExt();
     try std.fs.cwd().copyFile(
-        "zig-out" ++ sep ++ "bin" ++ sep ++ "zigup" ++ builtin.target.exeFileExt(),
+        comptime "zig-out" ++ sep ++ "bin" ++ sep ++ "zigup" ++ builtin.target.exeFileExt(),
         std.fs.cwd(),
         zigup,
         .{},
@@ -39,6 +42,9 @@ pub fn main() !u8 {
     var allocator_store = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer allocator_store.deinit();
     const allocator = allocator_store.allocator();
+
+    const path_link = try std.fs.path.join(allocator, &.{ bin_dir, comptime "zig" ++ builtin.target.exeFileExt() });
+    defer allocator.free(path_link);
 
     // add our scratch/bin directory to PATH
     child_env_map = try std.process.getEnvMap(allocator);
@@ -191,7 +197,7 @@ pub fn main() !u8 {
         defer allocator.free(scratch_bin2_path);
 
         {
-            var file = try std.fs.cwd().createFile(bin2_dir ++ sep ++ "zig" ++ builtin.target.exeFileExt(), .{});
+            var file = try std.fs.cwd().createFile(comptime bin2_dir ++ sep ++ "zig" ++ builtin.target.exeFileExt(), .{});
             defer file.close();
             try file.writer().writeAll("a fake executable");
         }
@@ -199,17 +205,41 @@ pub fn main() !u8 {
         setPathEnv(try std.mem.concat(allocator, u8, &.{ scratch_bin2_path, path_env_sep, previous_path}));
         defer setPathEnv(previous_path);
 
+        // verify zig isn't currently on 0.7.0 before we set it as the default
+        try checkZigVersion(allocator, path_link, expected_zig_version_0_7_0, .not_equal);
+
         {
             const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"default", "0.7.0"});
             defer { allocator.free(result.stdout); allocator.free(result.stderr); }
-            try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, " is lower priority in PATH than "));
+            std.log.info("output: {s}", .{result.stderr});
+            try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "error: zig compiler '"));
+            try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "' is higher priority in PATH than the path-link '"));
         }
+
+        // the path link should still be updated even though it's in a lower path priority.
+        // Verify zig points to the new defult version we just set.
+        try checkZigVersion(allocator, path_link, expected_zig_version_0_7_0, .equal);
     }
     // verify a dev build
     try runNoCapture(zigup_args ++ &[_][]const u8 { "0.10.0-dev.2836+2360f8c49" });
 
     std.log.info("Success", .{});
     return 0;
+}
+
+fn checkZigVersion(allocator: std.mem.Allocator, zig: []const u8, compare: []const u8, want_equal: enum { not_equal, equal }) !void {
+    const result = try runCaptureOuts(allocator, &[_][]const u8 {zig, "version" });
+    defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+    try passOrDumpAndThrow(result);
+
+    const actual_version = std.mem.trimRight(u8, result.stdout, "\r\n");
+    const actual_equal = std.mem.eql(u8, compare, actual_version);
+    const expected_equal = switch (want_equal) { .not_equal => false, .equal => true };
+    if (expected_equal != actual_equal) {
+        const prefix: []const u8 = if (expected_equal) "" else " NOT";
+        std.log.info("expected zig version to{s} be '{s}', but is '{s}'", .{prefix, compare, actual_version});
+        return error.TestUnexpectedResult;
+    }
 }
 
 fn getCompilerCount(install_dir: []const u8) !u32 {

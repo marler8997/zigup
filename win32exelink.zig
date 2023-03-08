@@ -1,3 +1,4 @@
+const builtin = @import("builtin");
 const std = @import("std");
 
 const log = std.log.scoped(.zigexelink);
@@ -93,10 +94,15 @@ const win32 = struct {
     pub const CTRL_LOGOFF_EVENT = @as(u32, 5);
     pub const CTRL_SHUTDOWN_EVENT = @as(u32, 6);
     pub const GetLastError = std.os.windows.kernel32.GetLastError;
-    pub const PHANDLER_ROUTINE = fn(
-        CtrlType: u32,
-    ) callconv(@import("std").os.windows.WINAPI) BOOL;
-    pub extern "KERNEL32" fn SetConsoleCtrlHandler(
+    pub const PHANDLER_ROUTINE = switch (builtin.zig_backend) {
+        .stage1 => fn(
+            CtrlType: u32,
+        ) callconv(@import("std").os.windows.WINAPI) BOOL,
+        else => *const fn(
+            CtrlType: u32,
+        ) callconv(@import("std").os.windows.WINAPI) BOOL,
+    };
+    pub extern "kernel32" fn SetConsoleCtrlHandler(
         HandlerRoutine: ?PHANDLER_ROUTINE,
         Add: BOOL,
     ) callconv(@import("std").os.windows.WINAPI) BOOL;

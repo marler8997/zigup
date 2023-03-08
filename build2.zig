@@ -49,7 +49,10 @@ pub fn build(b: *Builder) !void {
             const exe = b.addExecutable("win32exelink", "win32exelink.zig");
             exe.setTarget(target);
             exe.setBuildMode(mode);
-            zigup_build_options.addOptionFileSource("win32exelink_filename", .{ .generated = &exe.output_path_source });
+            // workaround @embedFile not working with absolute paths, see https://github.com/ziglang/zig/issues/14551
+            //zigup_build_options.addOptionFileSource("win32exelink_filename", .{ .generated = &exe.output_path_source });
+            const update_step = RelativeOutputPathSourceStep.create(exe);
+            zigup_build_options.addOptionFileSource("win32exelink_filename", .{ .generated = &update_step.output_path_source });
             break :blk exe;
         }
         break :blk null;
@@ -70,6 +73,32 @@ pub fn build(b: *Builder) !void {
 
     addTest(b, exe, target, mode);
 }
+
+// This whole step is a workaround to @embedFile not working with absolute paths, see https://github.com/ziglang/zig/issues/14551
+const RelativeOutputPathSourceStep = struct {
+    step: std.build.Step,
+    exe: *std.build.LibExeObjStep,
+    output_path_source: std.build.GeneratedFile,
+    pub fn create(exe: *std.build.LibExeObjStep) *RelativeOutputPathSourceStep {
+        const s = exe.builder.allocator.create(RelativeOutputPathSourceStep) catch unreachable;
+        s.* = .{
+            .step = std.build.Step.init(.custom, "relative output path", exe.builder.allocator, make),
+            .exe = exe,
+            .output_path_source = .{
+                .step = &s.step,
+            },
+        };
+        return s;
+    }
+    fn make(step: *std.build.Step) !void {
+        const self = @fieldParentPtr(RelativeOutputPathSourceStep, "step", step);
+        const b = self.exe.builder;
+        //std.log.info("output path is '{s}'", .{self.exe.output_path_source.path.?});
+        const abs_path = self.exe.output_path_source.path.?;
+        std.debug.assert(std.mem.startsWith(u8, abs_path, b.build_root));
+        self.output_path_source.path = std.mem.trimLeft(u8, abs_path[b.build_root.len..], "\\/");
+    }
+};
 
 fn addTest(b: *Builder, exe: *std.build.LibExeObjStep, target: std.zig.CrossTarget, mode: std.builtin.Mode) void {
     const test_exe = b.addExecutable("test", "test.zig");
@@ -114,7 +143,7 @@ fn addZigupExe(
         const zarc_repo = GitRepoStep.create(b, .{
             .url = "https://github.com/marler8997/zarc",
             .branch = "protected",
-            .sha = "acd3f4b7fe1fbd2ac533f441f85a56bfaa489f49",
+            .sha = "ca9554ffbfceedec6aae5f39fc71a52dbdec2a15",
         });
         exe.step.dependOn(&zarc_repo.step);
         const zarc_repo_path = zarc_repo.getPath(&exe.step);
