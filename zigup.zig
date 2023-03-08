@@ -143,6 +143,7 @@ fn help() void {
         \\  zigup VERSION                 download and set VERSION compiler as default
         \\  zigup fetch VERSION           download VERSION compiler
         \\  zigup default [VERSION]       get or set the default compiler
+        \\  zigup list                    list installed compiler versions
         \\  zigup clean   [VERSION]       deletes the given compiler version, otherwise, cleans all compilers
         \\                                that aren't the default, master, or marked to keep.
         \\  zigup keep VERSION            mark a compiler to be kept during clean
