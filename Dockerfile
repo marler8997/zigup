@@ -8,7 +8,7 @@ RUN mkdir -p /tools
 WORKDIR /tools
 
 # Install Zig
-RUN apk add --no-cache git curl tar xz
+RUN apk add --no-cache curl tar xz
 ARG ZIG_VERSION=0.11.0-dev.1507+6f13a725a
 RUN curl -sSfL \
       https://ziglang.org/builds/zig-linux-x86_64-"$ZIG_VERSION".tar.xz \
@@ -18,6 +18,7 @@ RUN curl -sSfL \
 ENV PATH="/tools/zig:$PATH"
 
 # Build zigup
+RUN apk add --no-cache git
 ARG ZIGUP_TARGET=x86_64-linux
 ARG ZIGUP_BUILD_FLAGS=-Drelease-safe
 COPY . /zigup
