@@ -40,12 +40,32 @@ zigup stores each compiler in a global "install directory" in a versioned subdir
 zigup makes the zig program available by creating an entry in a directory that occurs in the `PATH` environment variable.  On posix systems this entry is a symlink to one of the `zig` executables in the install directory.  On windows this is an executable that forwards invocations to one of the `zig` executables in the install directory.
 
 Both the "install directory" and "path link" are configurable through command-line options `--install-dir` and `--path-link` respectively.
+
 # Building
+
+## Directly on your host
 
 Run `zig build` to build, `zig build test` to test and install with:
 ```
 # install to a bin directory with
 cp zig-out/bin/zigup BIN_PATH
+```
+
+## Through Docker
+
+```bash
+# Build for the default target (x86_64-linux)
+docker build -t zigup .
+# Or specify a custom target through ZIGUP_TARGET
+# docker build -t zigup --build-arg ZIGUP_TARGET=macos-x86_64 .
+
+# Copy zigup from the Docker image to your host
+container="$(docker container create zigup)"
+docker container cp "$container":/zigup/zig-out/bin/zigup .
+docker container rm "$container"
+
+# Use zigup  
+./zigup --help
 ```
 
 # TODO

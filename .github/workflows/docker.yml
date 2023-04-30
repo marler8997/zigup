@@ -1,0 +1,39 @@
+name: Docker
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - unlocked
+
+jobs:
+  build:
+    concurrency: 
+      group: docker-${{ github.event.pull_request.number || github.sha }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build zigup on Docker
+        run: docker build -t zigup .
+
+      - name: Pull zigup from the built image
+        run: |
+          container="$(docker container create zigup)"
+          docker container cp "$container":/zigup/zig-out/bin/zigup .
+
+      - name: Verify zigup binary
+        run: |
+          if ldd ./zigup; then
+            >&2 echo "zigup was not compiled as a static binary"
+            exit 1
+          fi
+          ./zigup --help

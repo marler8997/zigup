@@ -1,0 +1,5 @@
+/.git
+/zig-cache
+/zig-out
+/dep
+/scratch
