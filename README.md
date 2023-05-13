@@ -50,7 +50,7 @@ cp zig-out/bin/zigup BIN_PATH
 
 # TODO
 
-* set/remove compiler in current environment without overriding the system-wide vesrion.
+* set/remove compiler in current environment without overriding the system-wide version.
 
 # Dependencies
 
