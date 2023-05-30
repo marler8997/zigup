@@ -80,7 +80,6 @@ fn getHomeDir() ![]const u8 {
 }
 
 fn allocInstallDirString(allocator: Allocator) ![]const u8 {
-    // TODO: maybe support ZIG_INSTALL_DIR environment variable?
     // TODO: maybe support a file on the filesystem to configure install dir?
     if (builtin.os.tag == .windows) {
         const self_exe_dir = try std.fs.selfExeDirPathAlloc(allocator);
@@ -106,6 +105,7 @@ fn getInstallDir(allocator: Allocator, options: GetInstallDirOptions) ![]const u
         optional_dir_to_free_on_error = try allocInstallDirString(allocator);
         break :init optional_dir_to_free_on_error.?;
     };
+
     std.debug.assert(std.fs.path.isAbsolute(install_dir));
     loginfo("install directory '{s}'", .{install_dir});
     if (options.create) {
@@ -153,10 +153,17 @@ fn help() void {
         \\  zigup fetch-index             download and print the download index json
         \\
         \\Common Options:
-        \\  --install-dir DIR             override the default install location
-        \\  --path-link PATH              path to the `zig` symlink that points to the default compiler
+        \\
+        \\  --install-dir DIR             path to the default install location. takes priority over
+        \\                                ZIGUP_INSTALL_DIR
+        \\  --path-link PATH              path to the `zig` symlink that points to the default compiler.
         \\                                this will typically be a file path within a PATH directory so
-        \\                                that the user can just run `zig`
+        \\                                that the user can just run `zig`. takes priority over
+        \\                                ZIGUP_PATH_LINK
+        \\Environment Variables:
+        \\
+        \\  ZIGUP_INSTALL_DIR             override the default install location (see --install-dir)
+        \\  ZIGUP_PATH_LINK               path to the `zig` symlink (see --path-link)
         \\
     ) catch unreachable;
 }
@@ -223,6 +230,8 @@ pub fn main2() !u8 {
         help();
         return 1;
     }
+    global_optional_install_dir = global_optional_install_dir orelse std.os.getenv("ZIGUP_INSTALL_DIR");
+    global_optional_path_link = global_optional_path_link orelse std.os.getenv("ZIGUP_PATH_LINK");
     if (std.mem.eql(u8, "fetch-index", args[0])) {
         if (args.len != 1) {
             std.log.err("'index' command requires 0 arguments but got {d}", .{args.len - 1});
