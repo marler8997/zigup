@@ -8,7 +8,6 @@ const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
 
 const ziget = @import("ziget");
-const zarc = @import("zarc");
 
 const fixdeletetree = @import("fixdeletetree.zig");
 
@@ -922,17 +921,21 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
                 if (std.mem.endsWith(u8, archive_basename, ".zip")) {
                     recognized = true;
                     archive_root_dir = archive_basename[0 .. archive_basename.len - ".zip".len];
-
-                    var installing_dir_opened = try std.fs.openDirAbsolute(installing_dir, .{});
-                    defer installing_dir_opened.close();
                     loginfo("extracting archive to \"{s}\"", .{installing_dir});
                     var timer = try std.time.Timer.start();
-                    var archive_file = try std.fs.openFileAbsolute(archive_absolute, .{});
-                    defer archive_file.close();
-                    const reader = archive_file.reader();
-                    var archive = try zarc.zip.load(allocator, reader);
-                    defer archive.deinit(allocator);
-                    _ = try archive.extract(reader, installing_dir_opened, .{});
+                    const cmd = try std.fmt.allocPrint(
+                        allocator,
+                        "Expand-Archive \"{s}\" -DestinationPath \"{s}\"", .{
+                            archive_absolute,
+                            installing_dir,
+                        },
+                    );
+                    defer allocator.free(cmd);
+                    checkRun(try run(allocator, &[_][]const u8{
+                        "powershell",
+                        "-Command",
+                        cmd,
+                    }));
                     const time = timer.read();
                     loginfo("extracted archive in {d:.2} s", .{@as(f32, @floatFromInt(time)) / @as(f32, @floatFromInt(std.time.ns_per_s))});
                 }
@@ -958,6 +961,17 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
 
     // finish installation by renaming the install dir
     try loggyRenameAbsolute(installing_dir, compiler_dir);
+}
+
+fn checkRun(term: std.ChildProcess.Term) void {
+    switch (term) {
+        .Exited => |code| if (code != 0) {
+            std.debug.panic("child process exited with code {}", .{code});
+        },
+        .Signal => |sig| std.debug.panic("child process terminated with signal {}", .{sig}),
+        .Stopped => |sig| std.debug.panic("child process stopped with signal {}", .{sig}),
+        .Unknown => |code| std.debug.panic("child process terminated for unknown reason with code {}", .{code}),
+    }
 }
 
 pub fn run(allocator: Allocator, argv: []const []const u8) !std.ChildProcess.Term {
