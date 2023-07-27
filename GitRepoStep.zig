@@ -1,4 +1,4 @@
-//! Publish Date: 2022_09_09
+//! Publish Date: 2023_03_19
 //! This file is hosted at github.com/marler8997/zig-build-repos and is meant to be copied
 //! to projects that use it.
 const std = @import("std");
@@ -22,7 +22,6 @@ pub const ShaCheck = enum {
 };
 
 step: std.build.Step,
-builder: *std.build.Builder,
 url: []const u8,
 name: []const u8,
 branch: ?[]const u8 = null,
@@ -46,21 +45,24 @@ pub fn create(b: *std.build.Builder, opt: struct {
     path: ?[]const u8 = null,
     sha_check: ShaCheck = .warn,
     fetch_enabled: ?bool = null,
+    first_ret_addr: ?usize = null,
 }) *GitRepoStep {
     var result = b.allocator.create(GitRepoStep) catch @panic("memory");
     const name = std.fs.path.basename(opt.url);
     result.* = GitRepoStep{
-        .step = std.build.Step.init(.custom, "clone a git repository", b.allocator, make),
-        .builder = b,
+        .step = std.build.Step.init(.{
+            .id = .custom,
+            .name = b.fmt("clone git repository '{s}'", .{name}),
+            .owner = b,
+            .makeFn = make,
+            .first_ret_addr = opt.first_ret_addr orelse @returnAddress(),
+            .max_rss = 0,
+        }),
         .url = opt.url,
         .name = name,
         .branch = opt.branch,
         .sha = opt.sha,
-        .path = if (opt.path) |p| (b.allocator.dupe(u8, p) catch @panic("memory")) else (std.fs.path.resolve(b.allocator, &[_][]const u8{
-            b.build_root,
-            "dep",
-            name,
-        })) catch @panic("memory"),
+        .path = if (opt.path) |p| b.allocator.dupe(u8, p) catch @panic("OOM") else b.pathFromRoot(b.pathJoin(&.{ "dep", name })),
         .sha_check = opt.sha_check,
         .fetch_enabled = if (opt.fetch_enabled) |fe| fe else defaultFetchOption(b),
     };
@@ -79,7 +81,8 @@ fn hasDependency(step: *const std.build.Step, dep_candidate: *const std.build.St
     return false;
 }
 
-fn make(step: *std.build.Step) !void {
+fn make(step: *std.Build.Step, prog_node: *std.Progress.Node) !void {
+    _ = prog_node;
     const self = @fieldParentPtr(GitRepoStep, "step", step);
 
     std.fs.accessAbsolute(self.path, .{}) catch {
@@ -98,7 +101,7 @@ fn make(step: *std.build.Step) !void {
         }
 
         {
-            var args = std.ArrayList([]const u8).init(self.builder.allocator);
+            var args = std.ArrayList([]const u8).init(self.step.owner.allocator);
             defer args.deinit();
             try args.append("git");
             try args.append("clone");
@@ -110,9 +113,9 @@ fn make(step: *std.build.Step) !void {
                 try args.append("-b");
                 try args.append(branch);
             }
-            try run(self.builder, args.items);
+            try run(self.step.owner, args.items);
         }
-        try run(self.builder, &[_][]const u8{
+        try run(self.step.owner, &[_][]const u8{
             "git",
             "-C",
             self.path,
@@ -132,7 +135,7 @@ fn checkSha(self: GitRepoStep) !void {
 
     const result: union(enum) { failed: anyerror, output: []const u8 } = blk: {
         const result = std.ChildProcess.exec(.{
-            .allocator = self.builder.allocator,
+            .allocator = self.step.owner.allocator,
             .argv = &[_][]const u8{
                 "git",
                 "-C",
@@ -140,8 +143,8 @@ fn checkSha(self: GitRepoStep) !void {
                 "rev-parse",
                 "HEAD",
             },
-            .cwd = self.builder.build_root,
-            .env_map = self.builder.env_map,
+            .cwd = self.step.owner.build_root.path,
+            .env_map = self.step.owner.env_map,
         }) catch |e| break :blk .{ .failed = e };
         try std.io.getStdErr().writer().writeAll(result.stderr);
         switch (result.term) {
@@ -183,7 +186,7 @@ fn run(builder: *std.build.Builder, argv: []const []const u8) !void {
     child.stdin_behavior = .Ignore;
     child.stdout_behavior = .Inherit;
     child.stderr_behavior = .Inherit;
-    child.cwd = builder.build_root;
+    child.cwd = builder.build_root.path;
     child.env_map = builder.env_map;
 
     try child.spawn();

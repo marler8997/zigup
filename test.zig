@@ -220,8 +220,12 @@ pub fn main() !u8 {
         // Verify zig points to the new defult version we just set.
         try checkZigVersion(allocator, path_link, expected_zig_version_0_7_0, .equal);
     }
+
     // verify a dev build
-    try runNoCapture(zigup_args ++ &[_][]const u8 { "0.10.0-dev.2836+2360f8c49" });
+    // NOTE: this test will eventually break when these builds are cleaned up,
+    //       we should support downloading from bazel and use that instead since
+    //       it should be more permanent
+    try runNoCapture(zigup_args ++ &[_][]const u8 { "0.11.0-dev.4263+f821543e4" });
 
     std.log.info("Success", .{});
     return 0;
@@ -248,13 +252,13 @@ fn getCompilerCount(install_dir: []const u8) !u32 {
     var it = dir.iterate();
     var count: u32 = 0;
     while (try it.next()) |entry| {
-        if (entry.kind == .Directory) {
+        if (entry.kind == .directory) {
             count += 1;
         } else {
             if (builtin.os.tag == .windows) {
-                try testing.expect(entry.kind == .File);
+                try testing.expect(entry.kind == .file);
             } else {
-                try testing.expect(entry.kind == .SymLink);
+                try testing.expect(entry.kind == .sym_link);
             }
         }
     }

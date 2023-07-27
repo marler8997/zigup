@@ -370,10 +370,10 @@ fn fetchCompiler(allocator: Allocator, version_arg: []const u8, set_default: Set
         if (!is_master)
             break :blk VersionUrl{ .version = version_arg, .url = try getDefaultUrl(allocator, version_arg) };
         optional_download_index = try fetchDownloadIndex(allocator);
-        const master = optional_download_index.?.json.root.Object.get("master").?;
-        const compiler_version = master.Object.get("version").?.String;
-        const master_linux = master.Object.get(json_platform).?;
-        const master_linux_tarball = master_linux.Object.get("tarball").?.String;
+        const master = optional_download_index.?.json.value.object.get("master").?;
+        const compiler_version = master.object.get("version").?.string;
+        const master_linux = master.object.get(json_platform).?;
+        const master_linux_tarball = master_linux.object.get("tarball").?.string;
         break :blk VersionUrl{ .version = compiler_version, .url = master_linux_tarball };
     };
     const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, version_url.version });
@@ -399,7 +399,7 @@ const download_index_url = "https://ziglang.org/download/index.json";
 
 const DownloadIndex = struct {
     text: []u8,
-    json: std.json.ValueTree,
+    json: std.json.Parsed(std.json.Value),
     pub fn deinit(self: *DownloadIndex, allocator: Allocator) void {
         self.json.deinit();
         allocator.free(self.text);
@@ -414,11 +414,7 @@ fn fetchDownloadIndex(allocator: Allocator) !DownloadIndex {
         },
     };
     errdefer allocator.free(text);
-    var json = init: {
-        var parser = std.json.Parser.init(allocator, false);
-        defer parser.deinit();
-        break :init try parser.parse(text);
-    };
+    var json = try std.json.parseFromSlice(std.json.Value, allocator, text, .{});
     errdefer json.deinit();
     return DownloadIndex{ .text = text, .json = json };
 }
@@ -504,7 +500,7 @@ fn listCompilers(allocator: Allocator) !void {
     {
         var it = install_dir.iterate();
         while (try it.next()) |entry| {
-            if (entry.kind != .Directory)
+            if (entry.kind != .directory)
                 continue;
             if (std.mem.endsWith(u8, entry.name, ".installing"))
                 continue;
@@ -556,7 +552,7 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
     } else {
         var it = install_dir.iterate();
         while (try it.next()) |entry| {
-            if (entry.kind != .Directory)
+            if (entry.kind != .directory)
                 continue;
             if (getKeepReason(master_points_to_opt, default_comp_opt, entry.name)) |reason| {
                 loginfo("keeping '{s}' ({s})", .{ entry.name, reason });
@@ -803,7 +799,7 @@ const FileId = struct {
             }
             return FileId{
                 .dev = info.dwVolumeSerialNumber,
-                .ino = (@intCast(u64, info.nFileIndexHigh) << 32) | @intCast(u64, info.nFileIndexLow),
+                .ino = (@as(u64, @intCast(info.nFileIndexHigh)) << 32) | @as(u64, @intCast(info.nFileIndexLow)),
             };
         }
         const st = try std.os.fstat(file.handle);
@@ -938,7 +934,7 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
                     defer archive.deinit(allocator);
                     _ = try archive.extract(reader, installing_dir_opened, .{});
                     const time = timer.read();
-                    loginfo("extracted archive in {d:.2} s", .{@intToFloat(f32, time) / @intToFloat(f32, std.time.ns_per_s)});
+                    loginfo("extracted archive in {d:.2} s", .{@as(f32, @floatFromInt(time)) / @as(f32, @floatFromInt(std.time.ns_per_s))});
                 }
             }
 
