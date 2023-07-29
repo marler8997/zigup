@@ -154,20 +154,6 @@ fn addZigupExe(
     exe.step.dependOn(&ziget_repo.step);
     zigetbuild.addZigetModule(exe, ssl_backend, ziget_repo.getPath(&exe.step));
 
-    if (targetIsWindows(target)) {
-        const zarc_repo = GitRepoStep.create(b, .{
-            .url = "https://github.com/marler8997/zarc",
-            .branch = "protected",
-            .sha = "2e5256624d7871180badc9784b96dd66d927d604",
-        });
-        exe.step.dependOn(&zarc_repo.step);
-        const zarc_repo_path = zarc_repo.getPath(&exe.step);
-        const zarc_mod = b.addModule("zarc", .{
-            .source_file = .{ .path = b.pathJoin(&.{ zarc_repo_path, "src", "main.zig" }) },
-        });
-        exe.addModule("zarc", zarc_mod);
-    }
-
     exe.step.dependOn(&require_ssl_backend.step);
     return exe;
 }
