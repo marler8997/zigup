@@ -2,8 +2,6 @@ const std = @import("std");
 const builtin = @import("builtin");
 const mem = std.mem;
 
-const build_options = @import("build_options");
-
 const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
 
@@ -847,7 +845,7 @@ const win32 = struct {
 };
 
 const win32exelink = struct {
-    const content =  @embedFile(build_options.win32exelink_filename);
+    const content =  @embedFile("win32exelink");
     const exe_offset: usize = if (builtin.os.tag != .windows) 0 else blk: {
         @setEvalBranchQuota(content.len * 2);
         const marker = "!!!THIS MARKS THE zig_exe_string MEMORY!!#";

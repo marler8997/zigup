@@ -41,8 +41,7 @@ pub fn build(b: *Builder) !void {
 
     const optimize = b.standardOptimizeOption(.{});
 
-    const zigup_build_options = b.addOptions();
-    const win32exelink: ?*std.build.LibExeObjStep = blk: {
+    const win32exelink_mod: ?*std.Build.Module = blk: {
         if (target.getOs().tag == .windows) {
             const exe = b.addExecutable(.{
                 .name = "win32exelink",
@@ -50,17 +49,22 @@ pub fn build(b: *Builder) !void {
                 .target = target,
                 .optimize = optimize,
             });
-            // workaround @embedFile not working with absolute paths, see https://github.com/ziglang/zig/issues/14551
-            //zigup_build_options.addOptionFileSource("win32exelink_filename", .{ .generated = &exe.output_path_source });
-            const update_step = RelativeOutputPathSourceStep.create(exe);
-            zigup_build_options.addOptionFileSource("win32exelink_filename", .{ .generated = &update_step.output_path_source });
-            break :blk exe;
+            break :blk b.createModule(.{
+                .source_file = exe.getEmittedBin(),
+            });
         }
         break :blk null;
     };
 
     // TODO: Maybe add more executables with different ssl backends
-    const exe = try addZigupExe(b, ziget_repo, target, optimize, zigup_build_options, win32exelink, .iguana);
+    const exe = try addZigupExe(
+        b,
+        ziget_repo,
+        target,
+        optimize,
+        win32exelink_mod,
+        .iguana,
+    );
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
@@ -74,40 +78,6 @@ pub fn build(b: *Builder) !void {
 
     addTest(b, exe, target, optimize);
 }
-
-// This whole step is a workaround to @embedFile not working with absolute paths, see https://github.com/ziglang/zig/issues/14551
-const RelativeOutputPathSourceStep = struct {
-    step: std.build.Step,
-    exe: *std.build.LibExeObjStep,
-    output_path_source: std.build.GeneratedFile,
-    pub fn create(exe: *std.build.LibExeObjStep) *RelativeOutputPathSourceStep {
-        const s = exe.step.owner.allocator.create(RelativeOutputPathSourceStep) catch unreachable;
-        s.* = .{
-            .step = std.build.Step.init(.{
-                .id = .custom,
-                .name = "relative output path",
-                .owner = exe.step.owner,
-                .makeFn = make,
-            }),
-            .exe = exe,
-            .output_path_source = .{
-                .step = &s.step,
-            },
-        };
-        s.step.dependOn(&exe.step);
-        return s;
-    }
-    fn make(step: *std.build.Step, prog_node: *std.Progress.Node) !void {
-        _ = prog_node;
-        const self = @fieldParentPtr(RelativeOutputPathSourceStep, "step", step);
-        const b = self.exe.step.owner;
-        //std.log.info("output path is '{s}'", .{self.exe.output_path_source.path.?});
-        const abs_path = self.exe.output_path_source.path.?;
-        const build_root_path = b.build_root.path orelse @panic("todo");
-        std.debug.assert(std.mem.startsWith(u8, abs_path, build_root_path));
-        self.output_path_source.path = std.mem.trimLeft(u8, abs_path[build_root_path.len..], "\\/");
-    }
-};
 
 fn addTest(b: *Builder, exe: *std.build.LibExeObjStep, target: std.zig.CrossTarget, optimize: std.builtin.Mode) void {
     const test_exe = b.addExecutable(.{
@@ -132,8 +102,7 @@ fn addZigupExe(
     ziget_repo: *GitRepoStep,
     target: std.zig.CrossTarget,
     optimize: std.builtin.Mode,
-    zigup_build_options: *std.build.OptionsStep,
-    optional_win32exelink: ?*std.build.LibExeObjStep,
+    win32exelink_mod: ?*std.build.Module,
     ssl_backend: ?SslBackend
 ) !*std.build.LibExeObjStep {
     const require_ssl_backend = b.allocator.create(RequireSslBackendStep) catch unreachable;
@@ -146,19 +115,16 @@ fn addZigupExe(
         .optimize = optimize,
     });
 
-    if (optional_win32exelink) |win32exelink| {
-        exe.step.dependOn(&win32exelink.step);
-    }
-    exe.addOptions("build_options", zigup_build_options);
-
     exe.step.dependOn(&ziget_repo.step);
     zigetbuild.addZigetModule(exe, ssl_backend, ziget_repo.getPath(&exe.step));
 
     if (targetIsWindows(target)) {
+        exe.addModule("win32exelink", win32exelink_mod.?);
         const zarc_repo = GitRepoStep.create(b, .{
             .url = "https://github.com/marler8997/zarc",
             .branch = "protected",
             .sha = "2e5256624d7871180badc9784b96dd66d927d604",
+            .fetch_enabled = true,
         });
         exe.step.dependOn(&zarc_repo.step);
         const zarc_repo_path = zarc_repo.getPath(&exe.step);
