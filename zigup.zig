@@ -302,7 +302,7 @@ pub fn main2() !u8 {
             try setDefaultCompiler(allocator, compiler_dir, .verify_existence);
             return 0;
         }
-        std.log.err("'default' command requires 1 or 2 arguments but got {d}", .{args.len - 1});
+        std.log.err("'default' command requires 0 or 1 arguments but got {d}", .{args.len - 1});
         return 1;
     }
     if (args.len == 1) {
