@@ -139,24 +139,24 @@ fn help() void {
         \\Download and manage zig compilers.
         \\
         \\Usage: zigup [command] [options]
-        \\       zigup VERSION      download and set VERSION compiler as default
+        \\       zigup [VERSION]    download and set VERSION compiler as default
         \\
         \\Common Commands:
-        \\  fetch VERSION           download VERSION compiler
+        \\  fetch <VERSION>         download VERSION compiler
         \\  default [VERSION]       get or set the default compiler
         \\  list                    list installed compiler versions
         \\  clean   [VERSION]       deletes the given compiler version, otherwise, cleans all compilers
         \\                          that aren't the default, master, or marked to keep.
-        \\  keep VERSION            mark a compiler to be kept during clean
-        \\  run VERSION ARGS...     run the given VERSION of the compiler with the given ARGS...
+        \\  keep <VERSION>          mark a compiler to be kept during clean
+        \\  run  <VERSION> ARGS...  run the given VERSION of the compiler with the given ARGS...
         \\
         \\Uncommon Commands:
         \\
         \\  fetch-index             download and print the download index json
         \\
         \\Common Options:
-        \\  --install-dir DIR       override the default install location
-        \\  --path-link PATH        path to the `zig` symlink that points to the default compiler
+        \\  --install-dir <DIR>     override the default install location
+        \\  --path-link <PATH>      path to the `zig` symlink that points to the default compiler
         \\                          this will typically be a file path within a PATH directory so
         \\                          that the user can just run `zig`
         \\
