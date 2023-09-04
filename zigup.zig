@@ -10,13 +10,13 @@ const zarc = @import("zarc");
 
 const fixdeletetree = @import("fixdeletetree.zig");
 
-const arch = switch(builtin.cpu.arch) {
+const arch = switch (builtin.cpu.arch) {
     .x86_64 => "x86_64",
     .aarch64 => "aarch64",
     .riscv64 => "riscv64",
     else => @compileError("Unsupported CPU Architecture"),
 };
-const os = switch(builtin.os.tag) {
+const os = switch (builtin.os.tag) {
     .windows => "windows",
     .linux => "linux",
     .macos => "macos",
@@ -68,7 +68,9 @@ fn downloadToString(allocator: Allocator, url: []const u8) ![]u8 {
     return response_array_list.toOwnedSlice();
 }
 
-fn ignoreHttpCallback(request: []const u8) void { _ = request; }
+fn ignoreHttpCallback(request: []const u8) void {
+    _ = request;
+}
 
 fn getHomeDir() ![]const u8 {
     return std.os.getenv("HOME") orelse {
@@ -210,7 +212,7 @@ pub fn main2() !u8 {
                 return 0;
             } else {
                 if (newlen == 0 and std.mem.eql(u8, "run", arg)) {
-                    return try runCompiler(allocator, args[i+1..]);
+                    return try runCompiler(allocator, args[i + 1 ..]);
                 }
                 args[newlen] = args[i];
                 newlen += 1;
@@ -489,7 +491,7 @@ fn listCompilers(allocator: Allocator) !void {
     const install_dir_string = try getInstallDir(allocator, .{ .create = false });
     defer allocator.free(install_dir_string);
 
-    var install_dir = std.fs.openIterableDirAbsolute(install_dir_string, .{ }) catch |e| switch (e) {
+    var install_dir = std.fs.openIterableDirAbsolute(install_dir_string, .{}) catch |e| switch (e) {
         error.FileNotFound => return,
         else => return e,
     };
@@ -512,7 +514,7 @@ fn keepCompiler(allocator: Allocator, compiler_version: []const u8) !void {
     const install_dir_string = try getInstallDir(allocator, .{ .create = true });
     defer allocator.free(install_dir_string);
 
-    var install_dir = try std.fs.openIterableDirAbsolute(install_dir_string, .{ });
+    var install_dir = try std.fs.openIterableDirAbsolute(install_dir_string, .{});
     defer install_dir.close();
 
     var compiler_dir = install_dir.dir.openDir(compiler_version, .{}) catch |e| switch (e) {
@@ -594,7 +596,7 @@ fn readDefaultCompiler(allocator: Allocator, buffer: *[std.fs.MAX_PATH_BYTES + 1
         return try allocator.dupe(u8, targetPathToVersion(target_exe));
     }
 
-    const target_path = std.fs.readLinkAbsolute(path_link, buffer[0 .. std.fs.MAX_PATH_BYTES]) catch |e| switch (e) {
+    const target_path = std.fs.readLinkAbsolute(path_link, buffer[0..std.fs.MAX_PATH_BYTES]) catch |e| switch (e) {
         error.FileNotFound => return null,
         else => return e,
     };
@@ -688,7 +690,7 @@ fn verifyPathLink(allocator: Allocator, path_link: []const u8) !void {
 
     const path_link_dir_id = blk: {
         var dir = std.fs.openDirAbsolute(path_link_dir, .{}) catch |err| {
-            std.log.err("unable to open the path-link directory '{s}': {s}", .{path_link_dir, @errorName(err)});
+            std.log.err("unable to open the path-link directory '{s}': {s}", .{ path_link_dir, @errorName(err) });
             return error.AlreadyReported;
         };
         defer dir.close();
@@ -732,10 +734,10 @@ fn verifyPathLink(allocator: Allocator, path_link: []const u8) !void {
             var ext_it = std.mem.tokenize(u8, pathext_env, ";");
             while (ext_it.next()) |ext| {
                 if (ext.len == 0) continue;
-                const basename = try std.mem.concat(allocator, u8, &.{"zig", ext});
+                const basename = try std.mem.concat(allocator, u8, &.{ "zig", ext });
                 defer allocator.free(basename);
 
-                const exe = try std.fs.path.join(allocator, &.{path, basename});
+                const exe = try std.fs.path.join(allocator, &.{ path, basename });
                 defer allocator.free(exe);
 
                 try enforceNoZig(path_link, exe);
@@ -776,7 +778,7 @@ fn enforceNoZig(path_link: []const u8, exe: []const u8) !void {
     defer file.close();
 
     // todo: on posix systems ignore the file if it is not executable
-    std.log.err("zig compiler '{s}' is higher priority in PATH than the path-link '{s}'", .{exe, path_link});
+    std.log.err("zig compiler '{s}' is higher priority in PATH than the path-link '{s}'", .{ exe, path_link });
 }
 
 const FileId = struct {
@@ -793,7 +795,7 @@ const FileId = struct {
         if (builtin.os.tag == .windows) {
             var info: win32.BY_HANDLE_FILE_INFORMATION = undefined;
             if (0 == win32.GetFileInformationByHandle(file.handle, &info)) {
-                std.log.err("GetFileInformationByHandle on '{s}' failed, error={}", .{filename_for_error, std.os.windows.kernel32.GetLastError()});
+                std.log.err("GetFileInformationByHandle on '{s}' failed, error={}", .{ filename_for_error, std.os.windows.kernel32.GetLastError() });
                 return error.AlreadyReported;
             }
             return FileId{
@@ -810,9 +812,9 @@ const FileId = struct {
 
     pub fn initFromDir(dir: std.fs.Dir, name_for_error: []const u8) !FileId {
         if (builtin.os.tag == .windows) {
-            return initFromFile(std.fs.File { .handle = dir.fd}, name_for_error);
+            return initFromFile(std.fs.File{ .handle = dir.fd }, name_for_error);
         }
-        return initFromFile(std.fs.File { .handle = dir.fd }, name_for_error);
+        return initFromFile(std.fs.File{ .handle = dir.fd }, name_for_error);
     }
 
     pub fn eql(self: FileId, other: FileId) bool {
@@ -845,7 +847,7 @@ const win32 = struct {
 };
 
 const win32exelink = struct {
-    const content =  @embedFile("win32exelink");
+    const content = @embedFile("win32exelink");
     const exe_offset: usize = if (builtin.os.tag != .windows) 0 else blk: {
         @setEvalBranchQuota(content.len * 2);
         const marker = "!!!THIS MARKS THE zig_exe_string MEMORY!!#";
@@ -860,12 +862,12 @@ const win32exelink = struct {
 };
 fn createExeLink(link_target: []const u8, path_link: []const u8) !void {
     if (path_link.len > std.fs.MAX_PATH_BYTES) {
-        std.debug.print("Error: path_link (size {}) is too large (max {})\n", .{path_link.len, std.fs.MAX_PATH_BYTES});
+        std.debug.print("Error: path_link (size {}) is too large (max {})\n", .{ path_link.len, std.fs.MAX_PATH_BYTES });
         return error.AlreadyReported;
     }
     const file = try std.fs.cwd().createFile(path_link, .{});
     defer file.close();
-    try file.writer().writeAll(win32exelink.content[0 .. win32exelink.exe_offset]);
+    try file.writer().writeAll(win32exelink.content[0..win32exelink.exe_offset]);
     try file.writer().writeAll(link_target);
     try file.writer().writeAll(win32exelink.content[win32exelink.exe_offset + link_target.len ..]);
 }
@@ -877,8 +879,8 @@ fn determineVersionKind(version: []const u8) VersionKind {
 
 fn getDefaultUrl(allocator: Allocator, compiler_version: []const u8) ![]const u8 {
     return switch (determineVersionKind(compiler_version)) {
-        .dev => try std.fmt.allocPrint(allocator, "https://ziglang.org/builds/zig-" ++ url_platform ++ "-{0s}." ++ archive_ext, .{ compiler_version }),
-        .release => try std.fmt.allocPrint(allocator, "https://ziglang.org/download/{s}/zig-" ++ url_platform ++ "-{0s}." ++ archive_ext, .{ compiler_version }),
+        .dev => try std.fmt.allocPrint(allocator, "https://ziglang.org/builds/zig-" ++ url_platform ++ "-{0s}." ++ archive_ext, .{compiler_version}),
+        .release => try std.fmt.allocPrint(allocator, "https://ziglang.org/download/{s}/zig-" ++ url_platform ++ "-{0s}." ++ archive_ext, .{compiler_version}),
     };
 }
 
