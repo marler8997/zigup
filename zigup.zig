@@ -138,26 +138,27 @@ fn help() void {
     std.io.getStdErr().writeAll(
         \\Download and manage zig compilers.
         \\
-        \\Common Usage:
+        \\Usage: zigup [command] [options]
+        \\       zigup VERSION      download and set VERSION compiler as default
         \\
-        \\  zigup VERSION                 download and set VERSION compiler as default
-        \\  zigup fetch VERSION           download VERSION compiler
-        \\  zigup default [VERSION]       get or set the default compiler
-        \\  zigup list                    list installed compiler versions
-        \\  zigup clean   [VERSION]       deletes the given compiler version, otherwise, cleans all compilers
-        \\                                that aren't the default, master, or marked to keep.
-        \\  zigup keep VERSION            mark a compiler to be kept during clean
-        \\  zigup run VERSION ARGS...     run the given VERSION of the compiler with the given ARGS...
+        \\Common Commands:
+        \\  fetch VERSION           download VERSION compiler
+        \\  default [VERSION]       get or set the default compiler
+        \\  list                    list installed compiler versions
+        \\  clean   [VERSION]       deletes the given compiler version, otherwise, cleans all compilers
+        \\                          that aren't the default, master, or marked to keep.
+        \\  keep VERSION            mark a compiler to be kept during clean
+        \\  run VERSION ARGS...     run the given VERSION of the compiler with the given ARGS...
         \\
-        \\Uncommon Usage:
+        \\Uncommon Commands:
         \\
-        \\  zigup fetch-index             download and print the download index json
+        \\  fetch-index             download and print the download index json
         \\
         \\Common Options:
-        \\  --install-dir DIR             override the default install location
-        \\  --path-link PATH              path to the `zig` symlink that points to the default compiler
-        \\                                this will typically be a file path within a PATH directory so
-        \\                                that the user can just run `zig`
+        \\  --install-dir DIR       override the default install location
+        \\  --path-link PATH        path to the `zig` symlink that points to the default compiler
+        \\                          this will typically be a file path within a PATH directory so
+        \\                          that the user can just run `zig`
         \\
     ) catch unreachable;
 }
