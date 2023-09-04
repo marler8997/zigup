@@ -21,7 +21,6 @@ fn buildNoreturn(b: *Builder) noreturn {
 fn buildOrFail(b: *Builder) anyerror {
     const ziget_repo = GitRepoStep.create(b, .{
         .url = "https://github.com/marler8997/ziget",
-        .branch = null,
         .sha = @embedFile("zigetsha"),
         .fetch_enabled = true,
     });
@@ -46,11 +45,11 @@ fn buildOrFail(b: *Builder) anyerror {
 }
 
 // TODO: remove the following if https://github.com/ziglang/zig/pull/9987 is integrated
-fn getBuildArgs(self: *Builder) ! []const [:0]const u8 {
+fn getBuildArgs(self: *Builder) ![]const [:0]const u8 {
     const args = try std.process.argsAlloc(self.allocator);
     return args[5..];
 }
-pub fn addBuild(self: *Builder, build_file: std.build.FileSource, _: struct { }) *std.build.RunStep {
+pub fn addBuild(self: *Builder, build_file: std.build.FileSource, _: struct {}) *std.build.RunStep {
     const run_step = std.build.RunStep.create(
         self,
         self.fmt("zig build {s}", .{build_file.getDisplayName()}),
