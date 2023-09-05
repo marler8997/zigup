@@ -54,8 +54,6 @@ cp zig-out/bin/zigup BIN_PATH
 
 # Dependencies
 
-zigup depends on https://github.com/marler8997/ziget which in turn depends on other projects depending on which SSL backend is selected.  You can provide `-Dfetch` to `zig build` to automatically clone all repository dependencies, otherwise, the build will report a missing dependency error with an explanation of how to clone it.
-
 The windows target depends on https://github.com/SuperAuguste/zarc to extract zip files.  This repo might point to my fork if there are needed changes pending the acceptance of a PR: https://github.com/marler8997/zarc.
 
 On linux and macos, zigup depends on `tar` to extract the compiler archive files (this may change in the future).
