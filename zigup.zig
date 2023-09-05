@@ -35,6 +35,7 @@ fn loginfo(comptime fmt: []const u8, args: anytype) void {
     }
 }
 
+const DownloadError = error{NotOk};
 fn download(allocator: Allocator, url: []const u8, writer: anytype) !void {
     var client: std.http.Client = .{ .allocator = allocator };
     defer client.deinit();
@@ -49,7 +50,15 @@ fn download(allocator: Allocator, url: []const u8, writer: anytype) !void {
     try req.start();
     try req.wait();
 
-    const body = try req.reader().readAllAlloc(allocator, req.response.content_length.?);
+    if (req.response.status != .ok) {
+        std.log.err("HTTP request failed. Status: {d} {s}\n", .{
+            @intFromEnum(req.response.status),
+            req.response.reason,
+        });
+        return error.NotOk;
+    }
+
+    const body = try req.reader().readAllAlloc(allocator, std.math.maxInt(usize));
     defer allocator.free(body);
 
     try writer.writeAll(body);
@@ -1008,7 +1017,12 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
         const archive_absolute = try std.fs.path.join(allocator, &[_][]const u8{ installing_dir, archive_basename });
         defer allocator.free(archive_absolute);
         loginfo("downloading '{s}' to '{s}'", .{ url, archive_absolute });
-        try downloadToFileAbsolute(allocator, url, archive_absolute);
+        downloadToFileAbsolute(allocator, url, archive_absolute) catch |e| switch (e) {
+            error.NotOk => {
+                try loggyDeleteTreeAbsolute(installing_dir);
+            },
+            else => return error.AlreadyReported,
+        };
 
         if (std.mem.endsWith(u8, archive_basename, ".tar.xz")) {
             archive_root_dir = archive_basename[0 .. archive_basename.len - ".tar.xz".len];
