@@ -19,20 +19,10 @@ fn buildNoreturn(b: *Builder) noreturn {
     std.os.exit(0xff);
 }
 fn buildOrFail(b: *Builder) anyerror {
-    const ziget_repo = GitRepoStep.create(b, .{
-        .url = "https://github.com/marler8997/ziget",
-        .sha = @embedFile("zigetsha"),
-        .fetch_enabled = true,
-    });
     const build2 = addBuild(b, .{ .path = "build2.zig" }, .{});
     build2.addArgs(try getBuildArgs(b));
 
     var progress = std.Progress{};
-    {
-        var prog_node = progress.start("clone ziget", 1);
-        ziget_repo.step.make(prog_node) catch |e| return e;
-        prog_node.end();
-    }
     {
         var prog_node = progress.start("run build2.zig", 1);
         build2.step.make(prog_node) catch |err| switch (err) {
