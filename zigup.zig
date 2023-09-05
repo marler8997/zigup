@@ -5,7 +5,6 @@ const mem = std.mem;
 const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
 
-const ziget = @import("ziget");
 const zarc = @import("zarc");
 
 const fixdeletetree = @import("fixdeletetree.zig");
@@ -37,22 +36,23 @@ fn loginfo(comptime fmt: []const u8, args: anytype) void {
 }
 
 fn download(allocator: Allocator, url: []const u8, writer: anytype) !void {
-    var download_options = ziget.request.DownloadOptions{
-        .flags = 0,
-        .allocator = allocator,
-        .maxRedirects = 10,
-        .forwardBufferSize = 4096,
-        .maxHttpResponseHeaders = 8192,
-        .onHttpRequest = ignoreHttpCallback,
-        .onHttpResponse = ignoreHttpCallback,
-    };
-    var dowload_state = ziget.request.DownloadState.init();
-    try ziget.request.download(
-        ziget.url.parseUrl(url) catch unreachable,
-        writer,
-        download_options,
-        &dowload_state,
+    var client: std.http.Client = .{ .allocator = allocator };
+    defer client.deinit();
+
+    var req = try client.request(
+        .GET,
+        try std.Uri.parse(url),
+        .{ .allocator = allocator },
+        .{},
     );
+    defer req.deinit();
+    try req.start();
+    try req.wait();
+
+    const body = try req.reader().readAllAlloc(allocator, req.response.content_length.?);
+    defer allocator.free(body);
+
+    try writer.writeAll(body);
 }
 
 fn downloadToFileAbsolute(allocator: Allocator, url: []const u8, file_absolute: []const u8) !void {
@@ -904,16 +904,7 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
         const archive_absolute = try std.fs.path.join(allocator, &[_][]const u8{ installing_dir, archive_basename });
         defer allocator.free(archive_absolute);
         loginfo("downloading '{s}' to '{s}'", .{ url, archive_absolute });
-        downloadToFileAbsolute(allocator, url, archive_absolute) catch |e| switch (e) {
-            error.HttpNon200StatusCode => {
-                // TODO: more information would be good
-                std.log.err("HTTP request failed (TODO: improve ziget library to get better error)", .{});
-                // this removes the installing dir if the http request fails so we dont have random directories
-                try loggyDeleteTreeAbsolute(installing_dir);
-                return error.AlreadyReported;
-            },
-            else => return e,
-        };
+        try downloadToFileAbsolute(allocator, url, archive_absolute);
 
         if (std.mem.endsWith(u8, archive_basename, ".tar.xz")) {
             archive_root_dir = archive_basename[0 .. archive_basename.len - ".tar.xz".len];
