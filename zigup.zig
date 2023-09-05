@@ -95,7 +95,7 @@ fn allocInstallDirString(allocator: Allocator) ![]const u8 {
     return std.fs.path.join(allocator, &[_][]const u8{ home, "zig" });
 }
 const GetInstallDirOptions = struct {
-    create: bool,
+    create: bool = false,
 };
 fn getInstallDir(allocator: Allocator, options: GetInstallDirOptions) ![]const u8 {
     var optional_dir_to_free_on_error: ?[]const u8 = null;
@@ -126,6 +126,12 @@ fn makeZigPathLinkString(allocator: Allocator) ![]const u8 {
     return try std.fs.path.join(allocator, &[_][]const u8{ zigup_dir, comptime "zig" ++ builtin.target.exeFileExt() });
 }
 
+fn makeZlsPathLinkString(allocator: Allocator) ![]const u8 {
+    const zigup_dir = try std.fs.selfExeDirPathAlloc(allocator);
+    defer allocator.free(zigup_dir);
+    return try std.fs.path.join(allocator, &[_][]const u8{ zigup_dir, comptime "zls" ++ builtin.target.exeFileExt() });
+}
+
 // TODO: this should be in standard lib
 fn toAbsolute(allocator: Allocator, path: []const u8) ![]u8 {
     std.debug.assert(!std.fs.path.isAbsolute(path));
@@ -149,6 +155,7 @@ fn help() void {
         \\                          that aren't the default, master, or marked to keep.
         \\  keep <VERSION>          mark a compiler to be kept during clean
         \\  run  <VERSION> ARGS...  run the given VERSION of the compiler with the given ARGS...
+        \\  zls <VERSION>           install zls for VERSION compiler
         \\
         \\Uncommon Commands:
         \\
@@ -305,6 +312,22 @@ pub fn main2() !u8 {
         std.log.err("'default' command requires 0 or 1 arguments but got {d}", .{args.len - 1});
         return 1;
     }
+    if (std.mem.eql(u8, "zls", args[0])) {
+        // if (std.mem.eql(u8, os, "windows")) {
+        if (builtin.os.tag == .windows) {
+            std.log.err("'windows' isn't supported (yet)", .{});
+            return 1;
+        }
+        if (args.len != 2) {
+            std.log.err("'zls' command requires VERSION argument", .{});
+            return 1;
+        }
+        const version_string = args[1];
+
+        try fetchZls(allocator, version_string);
+
+        return 0;
+    }
     if (args.len == 1) {
         try fetchCompiler(allocator, args[0], .set_default);
         return 0;
@@ -394,6 +417,62 @@ fn fetchCompiler(allocator: Allocator, version_arg: []const u8, set_default: Set
     }
     if (set_default == .set_default) {
         try setDefaultCompiler(allocator, compiler_dir, .existence_verified);
+    }
+}
+
+const ZlsError = error{
+    CompilerNotInstalled,
+    InvalidVersion,
+};
+fn fetchZls(allocator: Allocator, version: []const u8) !void {
+    const compiler_dir = try std.fs.path.join(
+        allocator,
+        &[_][]const u8{ try getInstallDir(allocator, .{}), version },
+    );
+    defer allocator.free(compiler_dir);
+
+    if (!try existsAbsolute(compiler_dir)) {
+        std.log.err("Zig version {s} not installed\n", .{version});
+        return error.CompilerNotInstalled;
+    }
+
+    const url = try std.fmt.allocPrint(
+        allocator,
+        "https://github.com/zigtools/zls/releases/download/{s}/zls-" ++ arch ++ "-" ++ os ++ ".tar.gz",
+        .{version},
+    );
+
+    const zls_dir = try std.fs.path.join(allocator, &[_][]const u8{ compiler_dir, "zls" });
+    defer allocator.free(zls_dir);
+    try loggyDeleteTreeAbsolute(zls_dir);
+    try loggyMakeDirAbsolute(zls_dir);
+
+    const archive_basename = std.fs.path.basename(url);
+
+    // download and extract zls
+    {
+        const archive_absolute = try std.fs.path.join(
+            allocator,
+            &[_][]const u8{ zls_dir, archive_basename },
+        );
+        loginfo("archive_abspath: {s}", .{archive_absolute});
+        defer allocator.free(archive_absolute);
+
+        loginfo("downloading '{s}' to '{s}'", .{ url, archive_absolute });
+        try downloadToFileAbsolute(allocator, url, archive_absolute);
+
+        _ = try run(allocator, &[_][]const u8{ "tar", "xf", archive_absolute, "-C", zls_dir });
+        const zls_bin_path = try std.fs.path.join(allocator, &[_][]const u8{ zls_dir, "bin", "zls" });
+        _ = try run(allocator, &[_][]const u8{ "chmod", "u+x", zls_bin_path });
+        try loggyDeleteTreeAbsolute(archive_absolute);
+    }
+
+    if (try getDefaultCompiler(allocator)) |default_compiler| {
+        std.log.info("Version: {s}\n", .{default_compiler});
+        defer allocator.free(default_compiler);
+        if (std.mem.eql(u8, default_compiler, version)) {
+            try setDefaultZls(allocator, zls_dir, .existence_verified);
+        }
     }
 }
 
@@ -679,6 +758,31 @@ fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, exist_veri
     }
 
     try verifyPathLink(allocator, path_link);
+}
+
+fn setDefaultZls(allocator: Allocator, zls_dir: []const u8, exist_verify: ExistVerify) !void {
+    switch (exist_verify) {
+        .existence_verified => {},
+        .verify_existence => {
+            var dir = std.fs.openDirAbsolute(zls_dir, .{}) catch |err| switch (err) {
+                error.FileNotFound => return,
+                else => |e| return e,
+            };
+            dir.close();
+        },
+    }
+
+    const path_link = try makeZlsPathLinkString(allocator);
+    defer allocator.free(path_link);
+
+    const link_target = try std.fs.path.join(allocator, &[_][]const u8{ zls_dir, "bin", comptime "zls" ++ builtin.target.exeFileExt() });
+    defer allocator.free(link_target);
+
+    if (builtin.os.tag == .windows) {
+        try createExeLink(link_target, path_link);
+    } else {
+        _ = try loggyUpdateSymlink(link_target, path_link, .{});
+    }
 }
 
 /// Verify that path_link will work.  It verifies that `path_link` is
