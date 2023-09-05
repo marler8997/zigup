@@ -26,6 +26,9 @@ pub fn build(b: *Build) !void {
 
     const optimize = b.standardOptimizeOption(.{});
 
+    // NOTE: weird spoof, fixes the -Dfetch problem
+    _ = b.option(bool, "fetch", "automatically fetch network resources");
+
     const win32exelink_mod: ?*std.Build.Module = blk: {
         if (target.getOs().tag == .windows) {
             const exe = b.addExecutable(.{
