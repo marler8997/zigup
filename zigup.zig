@@ -58,10 +58,8 @@ fn download(allocator: Allocator, url: []const u8, writer: anytype) !void {
         return error.NotOk;
     }
 
-    const body = try req.reader().readAllAlloc(allocator, std.math.maxInt(usize));
-    defer allocator.free(body);
-
-    try writer.writeAll(body);
+    var fifo = std.fifo.LinearFifo(u8, .{ .Static = 8192 }).init();
+    try fifo.pump(req.reader(), writer);
 }
 
 fn downloadToFileAbsolute(allocator: Allocator, url: []const u8, file_absolute: []const u8) !void {
