@@ -8,7 +8,7 @@ pub fn deleteTree(dir: std.fs.Dir, sub_path: []const u8) !void {
     if (builtin.os.tag != .windows) {
         return dir.deleteTree(sub_path);
     }
-    
+
     // workaround issue on windows where it just doesn't delete things
     const MAX_ATTEMPTS = 10;
     var attempt: u8 = 0;
@@ -19,7 +19,7 @@ pub fn deleteTree(dir: std.fs.Dir, sub_path: []const u8) !void {
             if (attempt == MAX_ATTEMPTS) return err;
             switch (err) {
                 error.FileBusy => {
-                    std.log.warn("path '{s}' is busy (attempt {}), will retry", .{sub_path, attempt});
+                    std.log.warn("path '{s}' is busy (attempt {}), will retry", .{ sub_path, attempt });
                     std.time.sleep(std.time.ns_per_ms * 100); // sleep for 100 ms
                 },
                 else => |e| return e,

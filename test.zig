@@ -35,9 +35,8 @@ pub fn main() !u8 {
         .{},
     );
 
-    const zigup_args = &[_][]const u8 { zigup } ++ (
-        if (builtin.os.tag == .windows) &[_][]const u8 { } else &[_][]const u8 { "--install-dir", install_dir }
-    );
+    const install_args = if (builtin.os.tag == .windows) [_][]const u8{} else [_][]const u8{ "--install-dir", install_dir };
+    const zigup_args = &[_][]const u8{zigup} ++ install_args;
 
     var allocator_store = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer allocator_store.deinit();
@@ -58,39 +57,57 @@ pub fn main() !u8 {
     {
         const scratch_bin_path = try std.fs.path.join(allocator, &.{ cwd, bin_dir });
         defer allocator.free(scratch_bin_path);
-        setPathEnv(try std.mem.concat(allocator, u8, &.{ scratch_bin_path, path_env_sep, original_path_env}));
+        setPathEnv(try std.mem.concat(allocator, u8, &.{ scratch_bin_path, path_env_sep, original_path_env }));
     }
 
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"default", "master"});
-        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{ "default", "master" });
+        defer {
+            allocator.free(result.stdout);
+            allocator.free(result.stderr);
+        }
         try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "master has not been fetched"));
     }
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"-h"});
-        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{"-h"});
+        defer {
+            allocator.free(result.stdout);
+            allocator.free(result.stderr);
+        }
         try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "Usage"));
     }
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"--help"});
-        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{"--help"});
+        defer {
+            allocator.free(result.stdout);
+            allocator.free(result.stderr);
+        }
         try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "Usage"));
     }
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"default"});
-        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{"default"});
+        defer {
+            allocator.free(result.stdout);
+            allocator.free(result.stderr);
+        }
         try passOrDumpAndThrow(result);
         try testing.expect(std.mem.eql(u8, result.stdout, "<no-default>\n"));
     }
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"fetch-index"});
-        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{"fetch-index"});
+        defer {
+            allocator.free(result.stdout);
+            allocator.free(result.stderr);
+        }
         try passOrDumpAndThrow(result);
         try testing.expect(std.mem.containsAtLeast(u8, result.stdout, 1, "master"));
     }
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"default", "0.7.0"});
-        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{ "default", "0.7.0" });
+        defer {
+            allocator.free(result.stdout);
+            allocator.free(result.stderr);
+        }
         dumpExecResult(result);
         switch (result.term) {
             .Exited => |code| try testing.expectEqual(@as(u8, 1), code),
@@ -98,25 +115,34 @@ pub fn main() !u8 {
         }
         try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "error: compiler '0.7.0' is not installed\n"));
     }
-    try runNoCapture(zigup_args ++ &[_][]const u8 {"0.7.0"});
+    try runNoCapture(zigup_args ++ &[_][]const u8{"0.7.0"});
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"default"});
-        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{"default"});
+        defer {
+            allocator.free(result.stdout);
+            allocator.free(result.stderr);
+        }
         try passOrDumpAndThrow(result);
         dumpExecResult(result);
         try testing.expect(std.mem.eql(u8, result.stdout, "0.7.0\n"));
     }
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"fetch", "0.7.0"});
-        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{ "fetch", "0.7.0" });
+        defer {
+            allocator.free(result.stdout);
+            allocator.free(result.stderr);
+        }
         try passOrDumpAndThrow(result);
         try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "already installed"));
     }
-    try runNoCapture(zigup_args ++ &[_][]const u8 {"master"});
-    try runNoCapture(zigup_args ++ &[_][]const u8 {"0.8.0"});
+    try runNoCapture(zigup_args ++ &[_][]const u8{"master"});
+    try runNoCapture(zigup_args ++ &[_][]const u8{"0.8.0"});
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"default"});
-        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{"default"});
+        defer {
+            allocator.free(result.stdout);
+            allocator.free(result.stderr);
+        }
         try passOrDumpAndThrow(result);
         dumpExecResult(result);
         try testing.expect(std.mem.eql(u8, result.stdout, "0.8.0\n"));
@@ -125,44 +151,59 @@ pub fn main() !u8 {
         const save_path_env = path_env_ptr.*;
         defer setPathEnv(save_path_env);
         setPathEnv("");
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"default", "master"});
-        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{ "default", "master" });
+        defer {
+            allocator.free(result.stdout);
+            allocator.free(result.stderr);
+        }
         try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, " is not in PATH"));
     }
-    try runNoCapture(zigup_args ++ &[_][]const u8 {"default", "master"});
+    try runNoCapture(zigup_args ++ &[_][]const u8{ "default", "master" });
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"list"});
-        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{"list"});
+        defer {
+            allocator.free(result.stdout);
+            allocator.free(result.stderr);
+        }
         try passOrDumpAndThrow(result);
         try testing.expect(std.mem.containsAtLeast(u8, result.stdout, 1, "0.7.0"));
         try testing.expect(std.mem.containsAtLeast(u8, result.stdout, 1, "0.8.0"));
     }
-    try runNoCapture(zigup_args ++ &[_][]const u8 {"default", "0.7.0"});
+    try runNoCapture(zigup_args ++ &[_][]const u8{ "default", "0.7.0" });
     try testing.expectEqual(@as(u32, 3), try getCompilerCount(install_dir));
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"run", "0.8.0", "version"});
-        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{ "run", "0.8.0", "version" });
+        defer {
+            allocator.free(result.stdout);
+            allocator.free(result.stderr);
+        }
         try testing.expectEqualSlices(u8, "0.8.0\n", result.stdout);
     }
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"run", "doesnotexist", "version"});
-        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{ "run", "doesnotexist", "version" });
+        defer {
+            allocator.free(result.stdout);
+            allocator.free(result.stderr);
+        }
         try testing.expectEqualSlices(u8, "error: compiler 'doesnotexist' does not exist, fetch it first with: zigup fetch doesnotexist\n", result.stderr);
     }
-    try runNoCapture(zigup_args ++ &[_][]const u8 {"keep", "0.8.0"});
+    try runNoCapture(zigup_args ++ &[_][]const u8{ "keep", "0.8.0" });
     // doesn't delete anything because we have keepfile and master doens't get deleted
-    try runNoCapture(zigup_args ++ &[_][]const u8 {"clean"});
+    try runNoCapture(zigup_args ++ &[_][]const u8{"clean"});
     try testing.expectEqual(@as(u32, 3), try getCompilerCount(install_dir));
 
     // Just make a directory to trick zigup into thinking there is another compiler so we don't have to wait for it to download/install
     try std.fs.cwd().makeDir(install_dir ++ sep ++ "0.9.0");
     try testing.expectEqual(@as(u32, 4), try getCompilerCount(install_dir));
-    try runNoCapture(zigup_args ++ &[_][]const u8 {"clean"});
+    try runNoCapture(zigup_args ++ &[_][]const u8{"clean"});
     try testing.expectEqual(@as(u32, 3), try getCompilerCount(install_dir));
 
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"clean", "0.8.0"});
-        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{ "clean", "0.8.0" });
+        defer {
+            allocator.free(result.stdout);
+            allocator.free(result.stderr);
+        }
         try passOrDumpAndThrow(result);
         try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "deleting "));
         try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "0.8.0"));
@@ -170,19 +211,25 @@ pub fn main() !u8 {
     try testing.expectEqual(@as(u32, 2), try getCompilerCount(install_dir));
 
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"clean"});
-        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{"clean"});
+        defer {
+            allocator.free(result.stdout);
+            allocator.free(result.stderr);
+        }
         try passOrDumpAndThrow(result);
         try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "it is master"));
     }
     try testing.expectEqual(@as(u32, 2), try getCompilerCount(install_dir));
 
-    try runNoCapture(zigup_args ++ &[_][]const u8 {"master"});
+    try runNoCapture(zigup_args ++ &[_][]const u8{"master"});
     try testing.expectEqual(@as(u32, 2), try getCompilerCount(install_dir));
 
     {
-        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"DOESNOTEXST"});
-        defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{"DOESNOTEXST"});
+        defer {
+            allocator.free(result.stdout);
+            allocator.free(result.stderr);
+        }
         try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "HTTP request failed"));
     }
     try testing.expectEqual(@as(u32, 2), try getCompilerCount(install_dir));
@@ -202,15 +249,18 @@ pub fn main() !u8 {
             try file.writer().writeAll("a fake executable");
         }
 
-        setPathEnv(try std.mem.concat(allocator, u8, &.{ scratch_bin2_path, path_env_sep, previous_path}));
+        setPathEnv(try std.mem.concat(allocator, u8, &.{ scratch_bin2_path, path_env_sep, previous_path }));
         defer setPathEnv(previous_path);
 
         // verify zig isn't currently on 0.7.0 before we set it as the default
         try checkZigVersion(allocator, path_link, expected_zig_version_0_7_0, .not_equal);
 
         {
-            const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8 {"default", "0.7.0"});
-            defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+            const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{ "default", "0.7.0" });
+            defer {
+                allocator.free(result.stdout);
+                allocator.free(result.stderr);
+            }
             std.log.info("output: {s}", .{result.stderr});
             try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "error: zig compiler '"));
             try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "' is higher priority in PATH than the path-link '"));
@@ -225,23 +275,29 @@ pub fn main() !u8 {
     // NOTE: this test will eventually break when these builds are cleaned up,
     //       we should support downloading from bazel and use that instead since
     //       it should be more permanent
-    try runNoCapture(zigup_args ++ &[_][]const u8 { "0.11.0-dev.4263+f821543e4" });
+    try runNoCapture(zigup_args ++ &[_][]const u8{"0.11.0-dev.4263+f821543e4"});
 
     std.log.info("Success", .{});
     return 0;
 }
 
 fn checkZigVersion(allocator: std.mem.Allocator, zig: []const u8, compare: []const u8, want_equal: enum { not_equal, equal }) !void {
-    const result = try runCaptureOuts(allocator, &[_][]const u8 {zig, "version" });
-    defer { allocator.free(result.stdout); allocator.free(result.stderr); }
+    const result = try runCaptureOuts(allocator, &[_][]const u8{ zig, "version" });
+    defer {
+        allocator.free(result.stdout);
+        allocator.free(result.stderr);
+    }
     try passOrDumpAndThrow(result);
 
     const actual_version = std.mem.trimRight(u8, result.stdout, "\r\n");
     const actual_equal = std.mem.eql(u8, compare, actual_version);
-    const expected_equal = switch (want_equal) { .not_equal => false, .equal => true };
+    const expected_equal = switch (want_equal) {
+        .not_equal => false,
+        .equal => true,
+    };
     if (expected_equal != actual_equal) {
         const prefix: []const u8 = if (expected_equal) "" else " NOT";
-        std.log.info("expected zig version to{s} be '{s}', but is '{s}'", .{prefix, compare, actual_version});
+        std.log.info("expected zig version to{s} be '{s}', but is '{s}'", .{ prefix, compare, actual_version });
         return error.TestUnexpectedResult;
     }
 }
@@ -265,17 +321,16 @@ fn getCompilerCount(install_dir: []const u8) !u32 {
     return count;
 }
 
-
 fn trailNl(s: []const u8) []const u8 {
-    return if (s.len == 0 or s[s.len-1] != '\n') "\n" else "";
+    return if (s.len == 0 or s[s.len - 1] != '\n') "\n" else "";
 }
 
 fn dumpExecResult(result: std.ChildProcess.ExecResult) void {
     if (result.stdout.len > 0) {
-        std.debug.print("--- STDOUT ---\n{s}{s}--------------\n", .{result.stdout, trailNl(result.stdout)});
+        std.debug.print("--- STDOUT ---\n{s}{s}--------------\n", .{ result.stdout, trailNl(result.stdout) });
     }
     if (result.stderr.len > 0) {
-        std.debug.print("--- STDERR ---\n{s}{s}--------------\n", .{result.stderr, trailNl(result.stderr)});
+        std.debug.print("--- STDERR ---\n{s}{s}--------------\n", .{ result.stderr, trailNl(result.stderr) });
     }
 }
 
@@ -292,7 +347,7 @@ fn runCaptureOuts(allocator: std.mem.Allocator, argv: []const []const u8) !std.C
         defer allocator.free(cmd);
         std.log.info("RUN: {s}", .{cmd});
     }
-    return try std.ChildProcess.exec(.{.allocator = allocator, .argv = argv, .env_map = &child_env_map});
+    return try std.ChildProcess.exec(.{ .allocator = allocator, .argv = argv, .env_map = &child_env_map });
 }
 fn passOrThrow(term: std.ChildProcess.Term) error{ChildProcessFailed}!void {
     if (!execResultPassed(term)) {

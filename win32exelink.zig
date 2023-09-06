@@ -10,7 +10,7 @@ const exe_marker_len = 42;
 // I'm exporting this and making it mutable to make sure the compiler keeps it around
 // and prevent it from evaluting its contents at comptime
 export var zig_exe_string: [exe_marker_len + std.fs.MAX_PATH_BYTES + 1]u8 =
-    ("!!!THIS MARKS THE zig_exe_string MEMORY!!#" ++ ([1]u8 {0} ** (std.fs.MAX_PATH_BYTES + 1))).*;
+    ("!!!THIS MARKS THE zig_exe_string MEMORY!!#" ++ ([1]u8{0} ** (std.fs.MAX_PATH_BYTES + 1))).*;
 
 const global = struct {
     var child: std.ChildProcess = undefined;
@@ -53,7 +53,7 @@ pub fn main() !u8 {
     try global.child.spawn();
     return switch (try global.child.wait()) {
         .Exited => |e| e,
-        .Signal =>  0xff,
+        .Signal => 0xff,
         .Stopped => 0xff,
         .Unknown => 0xff,
     };
@@ -72,13 +72,13 @@ fn consoleCtrlHandler(ctrl_type: u32) callconv(@import("std").os.windows.WINAPI)
         else => "Unknown",
     };
     // TODO: should we stop the process on a break event?
-    log.info("caught ctrl signal {d} ({s}), stopping process...", .{ctrl_type, name});
+    log.info("caught ctrl signal {d} ({s}), stopping process...", .{ ctrl_type, name });
     const exit_code = switch (global.child.kill() catch |err| {
         log.err("failed to kill process, error={s}", .{@errorName(err)});
         std.os.exit(0xff);
     }) {
         .Exited => |e| e,
-        .Signal =>  0xff,
+        .Signal => 0xff,
         .Stopped => 0xff,
         .Unknown => 0xff,
     };
@@ -95,10 +95,10 @@ const win32 = struct {
     pub const CTRL_SHUTDOWN_EVENT = @as(u32, 6);
     pub const GetLastError = std.os.windows.kernel32.GetLastError;
     pub const PHANDLER_ROUTINE = switch (builtin.zig_backend) {
-        .stage1 => fn(
+        .stage1 => fn (
             CtrlType: u32,
         ) callconv(@import("std").os.windows.WINAPI) BOOL,
-        else => *const fn(
+        else => *const fn (
             CtrlType: u32,
         ) callconv(@import("std").os.windows.WINAPI) BOOL,
     };
