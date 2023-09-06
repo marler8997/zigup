@@ -31,7 +31,7 @@ pub fn build(b: *Build) !void {
     // called or something like that
     _ = GitRepoStep.defaultFetchOption(b);
 
-    const win32exelink_mod: ?*std.Build.Module = blk: {
+    const win32exelink_mod: ?*Build.Module = blk: {
         if (target.getOs().tag == .windows) {
             const exe = b.addExecutable(.{
                 .name = "win32exelink",
@@ -67,7 +67,12 @@ pub fn build(b: *Build) !void {
     addTest(b, exe, target, optimize);
 }
 
-fn addTest(b: *Build, exe: *std.build.LibExeObjStep, target: std.zig.CrossTarget, optimize: std.builtin.Mode) void {
+fn addTest(
+    b: *Build,
+    exe: *Build.CompileStep,
+    target: std.zig.CrossTarget,
+    optimize: std.builtin.OptimizeMode,
+) void {
     const test_exe = b.addExecutable(.{
         .name = "test",
         .root_source_file = .{ .path = "test.zig" },
@@ -88,9 +93,9 @@ fn addTest(b: *Build, exe: *std.build.LibExeObjStep, target: std.zig.CrossTarget
 fn addZigupExe(
     b: *Build,
     target: std.zig.CrossTarget,
-    optimize: std.builtin.Mode,
-    win32exelink_mod: ?*std.build.Module,
-) !*std.build.LibExeObjStep {
+    optimize: std.builtin.OptimizeMode,
+    win32exelink_mod: ?*Build.Module,
+) !*std.Build.CompileStep {
     const exe = b.addExecutable(.{
         .name = "zigup",
         .root_source_file = .{ .path = "zigup.zig" },
@@ -125,9 +130,9 @@ fn targetIsWindows(target: std.zig.CrossTarget) bool {
 
 fn addGithubReleaseExe(
     b: *Build,
-    github_release_step: *std.build.Step,
+    github_release_step: *Build.Step,
     comptime target_triple: []const u8,
-    win32exelink_mod: ?*std.build.Module,
+    win32exelink_mod: ?*Build.Module,
 ) !void {
     const small_release = true;
 
