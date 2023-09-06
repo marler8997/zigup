@@ -3,14 +3,14 @@
 // NOTE: need to wait on https://github.com/ziglang/zig/pull/9989 before doing this
 //       to make build errors reasonable
 const std = @import("std");
-const Builder = std.build.Builder;
+const Build = std.Build;
 
 const GitRepoStep = @import("GitRepoStep.zig");
 
-pub fn build(b: *Builder) !void {
+pub fn build(b: *Build) !void {
     buildNoreturn(b);
 }
-fn buildNoreturn(b: *Builder) noreturn {
+fn buildNoreturn(b: *Build) noreturn {
     const err = buildOrFail(b);
     std.log.err("{s}", .{@errorName(err)});
     if (@errorReturnTrace()) |trace| {
@@ -18,7 +18,7 @@ fn buildNoreturn(b: *Builder) noreturn {
     }
     std.os.exit(0xff);
 }
-fn buildOrFail(b: *Builder) anyerror {
+fn buildOrFail(b: *Build) anyerror {
     const build2 = addBuild(b, .{ .path = "build2.zig" }, .{});
     build2.addArgs(try getBuildArgs(b));
 
@@ -35,11 +35,11 @@ fn buildOrFail(b: *Builder) anyerror {
 }
 
 // TODO: remove the following if https://github.com/ziglang/zig/pull/9987 is integrated
-fn getBuildArgs(self: *Builder) ![]const [:0]const u8 {
+fn getBuildArgs(self: *Build) ![]const [:0]const u8 {
     const args = try std.process.argsAlloc(self.allocator);
     return args[5..];
 }
-pub fn addBuild(self: *Builder, build_file: std.build.FileSource, _: struct {}) *std.build.RunStep {
+pub fn addBuild(self: *Build, build_file: std.build.FileSource, _: struct {}) *std.build.RunStep {
     const run_step = std.build.RunStep.create(
         self,
         self.fmt("zig build {s}", .{build_file.getDisplayName()}),
