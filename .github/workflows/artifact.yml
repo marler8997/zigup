@@ -20,6 +20,22 @@ jobs:
       - run: |
           zig build -Dci_target=ubuntu-latest-aarch64 -p zig-out-ubuntu-latest-aarch64
       - run: |
+          zig build -Dci_target=ubuntu-latest-riscv64 -p zig-out-ubuntu-latest-riscv64
+      - run: |
+          zig build -Dci_target=ubuntu-latest-armv7a -p zig-out-ubuntu-latest-armv7a
+      - run: |
+          zig build -Dci_target=ubuntu-latest-powerpc -p zig-out-ubuntu-latest-powerpc
+      - run: |
+          zig build -Dci_target=ubuntu-latest-powerpc64le -p zig-out-ubuntu-latest-powerpc64le
+      - run: |
+          zig build -Dci_target=ubuntu-latest-riscv64 -p zig-out-ubuntu-latest-riscv64
+      - run: |
+          zig build -Dci_target=ubuntu-latest-armv7a -p zig-out-ubuntu-latest-armv7a
+      - run: |
+          zig build -Dci_target=ubuntu-latest-powerpc -p zig-out-ubuntu-latest-powerpc
+      - run: |
+          zig build -Dci_target=ubuntu-latest-powerpc64le -p zig-out-ubuntu-latest-powerpc64le
+      - run: |
           zig build -Dci_target=macos-latest-x86_64 -p zig-out-macos-latest-x86_64
       - run: |
           zig build -Dci_target=macos-latest-aarch64 -p zig-out-macos-latest-aarch64
@@ -34,3 +50,23 @@ jobs:
         with:
           name: zigup ${{ matrix.os }}-aarch64
           path: zig-out-${{matrix.os}}-aarch64/bin/*
+      - if: ${{ matrix.os == 'ubuntu-latest' }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: zigup ${{ matrix.os }}-riscv64
+          path: zig-out-${{matrix.os}}-riscv64/bin/*
+      - if: ${{ matrix.os == 'ubuntu-latest' }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: zigup ${{ matrix.os }}-armv7a
+          path: zig-out-${{matrix.os}}-armv7a/bin/*
+      - if: ${{ matrix.os == 'ubuntu-latest' }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: zigup ${{ matrix.os }}-powerpc
+          path: zig-out-${{matrix.os}}-powerpc/bin/*
+      - if: ${{ matrix.os == 'ubuntu-latest' }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: zigup ${{ matrix.os }}-powerpc64le
+          path: zig-out-${{matrix.os}}-powerpc64le/bin/*
