@@ -80,8 +80,15 @@ fn getHomeDir() ![]const u8 {
 }
 
 fn allocInstallDirString(allocator: Allocator) ![]const u8 {
-    // TODO: maybe support ZIG_INSTALL_DIR environment variable?
     // TODO: maybe support a file on the filesystem to configure install dir?
+    if(std.os.getenv("ZIG_INSTALL_DIR")) |install_dir| {
+        if (std.fs.path.isAbsolute(install_dir)) {
+            return install_dir;
+        } else {
+            std.log.err("the $ZIG_INSTALL_DIR environment variable '{s}' is not an absolute path", .{install_dir});
+            return error.BadInstallDirEnvironmentVariable;
+        }
+    }
     if (builtin.os.tag == .windows) {
         const self_exe_dir = try std.fs.selfExeDirPathAlloc(allocator);
         defer allocator.free(self_exe_dir);
@@ -92,7 +99,7 @@ fn allocInstallDirString(allocator: Allocator) ![]const u8 {
         std.log.err("$HOME environment variable '{s}' is not an absolute path", .{home});
         return error.BadHomeEnvironmentVariable;
     }
-    return std.fs.path.join(allocator, &[_][]const u8{ home, "zig" });
+    return std.fs.path.join(allocator, &[_][]const u8{ home, "zig" });   
 }
 const GetInstallDirOptions = struct {
     create: bool,
@@ -119,6 +126,9 @@ fn getInstallDir(allocator: Allocator, options: GetInstallDirOptions) ![]const u
 
 fn makeZigPathLinkString(allocator: Allocator) ![]const u8 {
     if (global_optional_path_link) |path| return path;
+    if (std.os.getenv("ZIG_PATH_LINK")) |path_link| {
+        return try std.fs.path.join(allocator, &[_][]const u8{ path_link, comptime "zig" ++ builtin.target.exeFileExt() });
+    }
 
     const zigup_dir = try std.fs.selfExeDirPathAlloc(allocator);
     defer allocator.free(zigup_dir);
@@ -154,10 +164,12 @@ fn help() void {
         \\  zigup fetch-index             download and print the download index json
         \\
         \\Common Options:
-        \\  --install-dir DIR             override the default install location
+        \\  --install-dir DIR             override the default install location. For convenience, this
+        \\                                option can be set with the ZIG_INSTALL_DIR environment variable.
         \\  --path-link PATH              path to the `zig` symlink that points to the default compiler
         \\                                this will typically be a file path within a PATH directory so
-        \\                                that the user can just run `zig`
+        \\                                that the user can just run `zig`. For convenience, this option
+        \\                                can be set with the ZIG_PATH_LINK environment variable.
         \\
     ) catch unreachable;
 }
