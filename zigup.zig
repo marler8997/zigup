@@ -5,7 +5,6 @@ const mem = std.mem;
 const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
 
-const ziget = @import("ziget");
 const zarc = @import("zarc");
 
 const fixdeletetree = @import("fixdeletetree.zig");
@@ -36,36 +35,60 @@ fn loginfo(comptime fmt: []const u8, args: anytype) void {
     }
 }
 
-fn download(allocator: Allocator, url: []const u8, writer: anytype) !void {
-    var download_options = ziget.request.DownloadOptions{
-        .flags = 0,
-        .allocator = allocator,
-        .maxRedirects = 10,
-        .forwardBufferSize = 4096,
-        .maxHttpResponseHeaders = 8192,
-        .onHttpRequest = ignoreHttpCallback,
-        .onHttpResponse = ignoreHttpCallback,
-    };
-    var dowload_state = ziget.request.DownloadState.init();
-    try ziget.request.download(
-        ziget.url.parseUrl(url) catch unreachable,
-        writer,
-        download_options,
-        &dowload_state,
-    );
-}
-
 fn downloadToFileAbsolute(allocator: Allocator, url: []const u8, file_absolute: []const u8) !void {
     const file = try std.fs.createFileAbsolute(file_absolute, .{});
     defer file.close();
-    try download(allocator, url, file.writer());
+    var client = std.http.Client{
+        .allocator = allocator,
+    };
+    defer client.deinit();
+
+    const uri = try std.Uri.parse(url);
+    const headers = std.http.Headers.init(allocator);
+    var req = try client.open(.GET, uri, headers, .{});
+    defer req.deinit();
+
+    try req.send(.{});
+    try req.wait();
+
+    var reader = req.reader().any();
+    var buf: [4069]u8 = undefined;
+
+    while (true) {
+        const count = reader.read(&buf) catch |e| {
+            switch (e) {
+                error.EndOfStream => return,
+                else => return e,
+            }
+        };
+        if (count == 0) return;
+
+        _ = try file.write(buf[0..count]);
+    }
+
+    // try download(allocator, url, file.writer());
 }
 
 fn downloadToString(allocator: Allocator, url: []const u8) ![]u8 {
     var response_array_list = try ArrayList(u8).initCapacity(allocator, 20 * 1024); // 20 KB (modify if response is expected to be bigger)
     errdefer response_array_list.deinit();
-    try download(allocator, url, response_array_list.writer());
-    return response_array_list.toOwnedSlice();
+
+    var client = std.http.Client{
+        .allocator = allocator,
+    };
+    defer client.deinit();
+
+    const uri = try std.Uri.parse(url);
+    const headers = std.http.Headers.init(allocator);
+    var req = try client.open(.GET, uri, headers, .{});
+    defer req.deinit();
+
+    try req.send(.{});
+    try req.wait();
+    var res = std.ArrayList(u8).init(allocator);
+    try req.reader().any().readAllArrayList(&res, std.math.maxInt(usize));
+
+    return res.toOwnedSlice();
 }
 
 fn ignoreHttpCallback(request: []const u8) void {
@@ -282,13 +305,15 @@ pub fn main2() !u8 {
                 if (!std.mem.eql(u8, version_string, "master"))
                     break :init_resolved version_string;
 
-                var optional_master_dir: ?[]const u8 = blk: {
-                    var install_dir = std.fs.openIterableDirAbsolute(install_dir_string, .{}) catch |e| switch (e) {
+                const optional_master_dir: ?[]const u8 = blk: {
+                    var install_dir = std.fs.openDirAbsolute(install_dir_string, .{
+                        .iterate = true,
+                    }) catch |e| switch (e) {
                         error.FileNotFound => break :blk null,
                         else => return e,
                     };
                     defer install_dir.close();
-                    break :blk try getMasterDir(allocator, &install_dir.dir);
+                    break :blk try getMasterDir(allocator, &install_dir);
                 };
                 // no need to free master_dir, this is a short lived program
                 break :init_resolved optional_master_dir orelse {
@@ -388,7 +413,7 @@ fn fetchCompiler(allocator: Allocator, version_arg: []const u8, set_default: Set
             defer file.close();
             try file.writer().writeAll(version_url.version);
         } else {
-            _ = try loggyUpdateSymlink(version_url.version, master_symlink, .{ .is_directory = true });
+            _ = try loggyUpdateSymlink(version_url.version, master_symlink);
         }
     }
     if (set_default == .set_default) {
@@ -443,17 +468,16 @@ pub fn loggyRenameAbsolute(old_path: []const u8, new_path: []const u8) !void {
     try std.fs.renameAbsolute(old_path, new_path);
 }
 
-pub fn loggySymlinkAbsolute(target_path: []const u8, sym_link_path: []const u8, flags: std.fs.SymLinkFlags) !void {
+pub fn loggySymlinkAbsolute(target_path: []const u8, sym_link_path: []const u8) !void {
     loginfo("ln -s '{s}' '{s}'", .{ target_path, sym_link_path });
     // NOTE: can't use symLinkAbsolute because it requires target_path to be absolute but we don't want that
     //       not sure if it is a bug in the standard lib or not
     //try std.fs.symLinkAbsolute(target_path, sym_link_path, flags);
-    _ = flags;
     try std.os.symlink(target_path, sym_link_path);
 }
 
 /// returns: true if the symlink was updated, false if it was already set to the given `target_path`
-pub fn loggyUpdateSymlink(target_path: []const u8, sym_link_path: []const u8, flags: std.fs.SymLinkFlags) !bool {
+pub fn loggyUpdateSymlink(target_path: []const u8, sym_link_path: []const u8) !bool {
     var current_target_path_buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
     if (std.fs.readLinkAbsolute(sym_link_path, &current_target_path_buffer)) |current_target_path| {
         if (std.mem.eql(u8, target_path, current_target_path)) {
@@ -465,7 +489,7 @@ pub fn loggyUpdateSymlink(target_path: []const u8, sym_link_path: []const u8, fl
         error.FileNotFound => {},
         else => return e,
     }
-    try loggySymlinkAbsolute(target_path, sym_link_path, flags);
+    try loggySymlinkAbsolute(target_path, sym_link_path);
     return true; // updated
 }
 
@@ -491,7 +515,9 @@ fn listCompilers(allocator: Allocator) !void {
     const install_dir_string = try getInstallDir(allocator, .{ .create = false });
     defer allocator.free(install_dir_string);
 
-    var install_dir = std.fs.openIterableDirAbsolute(install_dir_string, .{}) catch |e| switch (e) {
+    var install_dir = std.fs.openDirAbsolute(install_dir_string, .{
+        .iterate = true,
+    }) catch |e| switch (e) {
         error.FileNotFound => return,
         else => return e,
     };
@@ -514,10 +540,12 @@ fn keepCompiler(allocator: Allocator, compiler_version: []const u8) !void {
     const install_dir_string = try getInstallDir(allocator, .{ .create = true });
     defer allocator.free(install_dir_string);
 
-    var install_dir = try std.fs.openIterableDirAbsolute(install_dir_string, .{});
+    var install_dir = try std.fs.openDirAbsolute(install_dir_string, .{
+        .iterate = true,
+    });
     defer install_dir.close();
 
-    var compiler_dir = install_dir.dir.openDir(compiler_version, .{}) catch |e| switch (e) {
+    var compiler_dir = install_dir.openDir(compiler_version, .{}) catch |e| switch (e) {
         error.FileNotFound => {
             std.log.err("compiler not found: {s}", .{compiler_version});
             return error.AlreadyReported;
@@ -536,12 +564,13 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
     const default_comp_opt = try getDefaultCompiler(allocator);
     defer if (default_comp_opt) |default_compiler| allocator.free(default_compiler);
 
-    var install_dir = std.fs.openIterableDirAbsolute(install_dir_string, .{}) catch |e| switch (e) {
+    var install_dir = std.fs.openDirAbsolute(install_dir_string, .{}) catch |e| switch (e) {
         error.FileNotFound => return,
         else => return e,
     };
+
     defer install_dir.close();
-    const master_points_to_opt = try getMasterDir(allocator, &install_dir.dir);
+    const master_points_to_opt = try getMasterDir(allocator, &install_dir);
     defer if (master_points_to_opt) |master_points_to| allocator.free(master_points_to);
     if (compiler_name_opt) |compiler_name| {
         if (getKeepReason(master_points_to_opt, default_comp_opt, compiler_name)) |reason| {
@@ -549,7 +578,7 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
             return error.AlreadyReported;
         }
         loginfo("deleting '{s}{c}{s}'", .{ install_dir_string, std.fs.path.sep, compiler_name });
-        try fixdeletetree.deleteTree(install_dir.dir, compiler_name);
+        try fixdeletetree.deleteTree(install_dir, compiler_name);
     } else {
         var it = install_dir.iterate();
         while (try it.next()) |entry| {
@@ -561,7 +590,7 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
             }
 
             {
-                var compiler_dir = try install_dir.dir.openDir(entry.name, .{});
+                var compiler_dir = try install_dir.openDir(entry.name, .{});
                 defer compiler_dir.close();
                 if (compiler_dir.access("keep", .{})) |_| {
                     loginfo("keeping '{s}' (has keep file)", .{entry.name});
@@ -572,7 +601,7 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
                 }
             }
             loginfo("deleting '{s}{c}{s}'", .{ install_dir_string, std.fs.path.sep, entry.name });
-            try fixdeletetree.deleteTree(install_dir.dir, entry.name);
+            try fixdeletetree.deleteTree(install_dir, entry.name);
         }
     }
 }
@@ -625,16 +654,16 @@ fn readMasterDir(buffer: *[std.fs.MAX_PATH_BYTES]u8, install_dir: *std.fs.Dir) !
 fn getDefaultCompiler(allocator: Allocator) !?[]const u8 {
     var buffer: [std.fs.MAX_PATH_BYTES + 1]u8 = undefined;
     const slice_path = (try readDefaultCompiler(allocator, &buffer)) orelse return null;
-    var path_to_return = try allocator.alloc(u8, slice_path.len);
-    std.mem.copy(u8, path_to_return, slice_path);
+    const path_to_return = try allocator.alloc(u8, slice_path.len);
+    std.mem.copyForwards(u8, path_to_return, slice_path);
     return path_to_return;
 }
 
 fn getMasterDir(allocator: Allocator, install_dir: *std.fs.Dir) !?[]const u8 {
     var buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
     const slice_path = (try readMasterDir(&buffer, install_dir)) orelse return null;
-    var path_to_return = try allocator.alloc(u8, slice_path.len);
-    std.mem.copy(u8, path_to_return, slice_path);
+    const path_to_return = try allocator.alloc(u8, slice_path.len);
+    std.mem.copyForwards(u8, path_to_return, slice_path);
     return path_to_return;
 }
 
@@ -674,7 +703,7 @@ fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, exist_veri
     if (builtin.os.tag == .windows) {
         try createExeLink(link_target, path_link);
     } else {
-        _ = try loggyUpdateSymlink(link_target, path_link, .{});
+        _ = try loggyUpdateSymlink(link_target, path_link);
     }
 
     try verifyPathLink(allocator, path_link);
@@ -783,11 +812,11 @@ fn enforceNoZig(path_link: []const u8, exe: []const u8) !void {
 
 const FileId = struct {
     dev: if (builtin.os.tag == .windows) u32 else blk: {
-        var st: std.os.Stat = undefined;
+        const st: std.os.Stat = undefined;
         break :blk @TypeOf(st.dev);
     },
     ino: if (builtin.os.tag == .windows) u64 else blk: {
-        var st: std.os.Stat = undefined;
+        const st: std.os.Stat = undefined;
         break :blk @TypeOf(st.ino);
     },
 
@@ -980,7 +1009,7 @@ fn logRun(allocator: Allocator, argv: []const []const u8) !void {
         } else {
             prefix = true;
         }
-        std.mem.copy(u8, buffer[offset .. offset + arg.len], arg);
+        std.mem.copyForwards(u8, buffer[offset .. offset + arg.len], arg);
         offset += arg.len;
     }
     std.debug.assert(offset == buffer.len);
