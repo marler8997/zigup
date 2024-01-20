@@ -13,21 +13,6 @@ fn unwrapOptionalBool(optionalBool: ?bool) bool {
 }
 
 pub fn build(b: *Builder) !void {
-    const ziget_repo = GitRepoStep.create(b, .{
-        .url = "https://github.com/marler8997/ziget",
-        .branch = null,
-        .sha = @embedFile("zigetsha"),
-    });
-
-    // TODO: implement this if/when we get @tryImport
-    //if (zigetbuild) |_| { } else {
-    //    std.log.err("TODO: add zigetbuild package and recompile/reinvoke build.d", .{});
-    //    return;
-    //}
-
-    //var github_release_step = b.step("github-release", "Build the github-release binaries");
-    //try addGithubReleaseExe(b, github_release_step, ziget_repo, "x86_64-linux", .std);
-
     const target = b.standardTargetOptions(.{});
 
     const optimize = b.standardOptimizeOption(.{});
@@ -50,7 +35,6 @@ pub fn build(b: *Builder) !void {
     // TODO: Maybe add more executables with different ssl backends
     const exe = try addZigupExe(
         b,
-        ziget_repo,
         target,
         optimize,
         win32exelink_mod,
@@ -89,7 +73,6 @@ fn addTest(b: *Builder, exe: *std.Build.Step.Compile, target: std.Build.Resolved
 
 fn addZigupExe(
     b: *Builder,
-    ziget_repo: *GitRepoStep,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.Mode,
     win32exelink_mod: ?*std.Build.Module,
@@ -101,9 +84,6 @@ fn addZigupExe(
         .target = target,
         .optimize = optimize,
     });
-
-    exe.step.dependOn(&ziget_repo.step);
-    // zigetbuild.addZigetModule(exe, ssl_backend, ziget_repo.getPath(&exe.step));
 
     if (target.result.os.tag == .windows) {
         exe.root_module.addImport("win32exelink", win32exelink_mod.?);
@@ -123,12 +103,12 @@ fn addZigupExe(
     return exe;
 }
 
-fn addGithubReleaseExe(b: *Builder, github_release_step: *std.Build.Step, ziget_repo: []const u8, comptime target_triple: []const u8) !void {
+fn addGithubReleaseExe(b: *Builder, github_release_step: *std.Build.Step, comptime target_triple: []const u8) !void {
     const small_release = true;
 
     const target = try std.zig.CrossTarget.parse(.{ .arch_os_abi = target_triple });
     const mode = if (small_release) .ReleaseSafe else .Debug;
-    const exe = try addZigupExe(b, ziget_repo, target, mode);
+    const exe = try addZigupExe(b, target, mode);
     if (small_release) {
         exe.strip = true;
     }

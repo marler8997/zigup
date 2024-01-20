@@ -934,11 +934,8 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
         loginfo("downloading '{s}' to '{s}'", .{ url, archive_absolute });
         downloadToFileAbsolute(allocator, url, archive_absolute) catch |e| switch (e) {
             error.HttpNon200StatusCode => {
-                // TODO: more information would be good
-                std.log.err("HTTP request failed (TODO: improve ziget library to get better error)", .{});
-                // this removes the installing dir if the http request fails so we dont have random directories
                 try loggyDeleteTreeAbsolute(installing_dir);
-                return error.AlreadyReported;
+                return error.HttpNon200StatusCode;
             },
             else => return e,
         };
