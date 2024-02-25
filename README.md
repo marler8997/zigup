@@ -48,6 +48,10 @@ Run `zig build` to build, `zig build test` to test and install with:
 cp zig-out/bin/zigup BIN_PATH
 ```
 
+# Building Zigup
+
+Zigup is currently built/tested using zig 0.11.0.
+
 # TODO
 
 * set/remove compiler in current environment without overriding the system-wide version.
