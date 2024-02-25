@@ -126,6 +126,41 @@ pub fn main() !u8 {
         dumpExecResult(result);
         try testing.expect(std.mem.eql(u8, result.stdout, "0.7.0\n"));
     }
+
+    // verify we print a nice error message if we can't update the symlink
+    // because it's a directory
+    {
+        const zig_exe_link = comptime "scratch" ++ sep ++ "bin" ++ sep ++ "zig" ++ builtin.target.exeFileExt();
+
+        if (std.fs.cwd().access(zig_exe_link, .{})) {
+            try std.fs.cwd().deleteFile(zig_exe_link);
+        } else |err| switch (err) {
+            error.FileNotFound => {},
+            else => |e| return e,
+        }
+        try std.fs.cwd().makeDir(zig_exe_link);
+
+        const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{ "default", "0.7.0" });
+        defer {
+            allocator.free(result.stdout);
+            allocator.free(result.stderr);
+        }
+        dumpExecResult(result);
+        switch (result.term) {
+            .Exited => |code| try testing.expectEqual(@as(u8, 1), code),
+            else => |term| std.debug.panic("unexpected exit {}", .{term}),
+        }
+        if (builtin.os.tag == .windows) {
+            try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "unable to create the exe link, the path '"));
+            try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "' is a directory"));
+        } else {
+            try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "unable to update/overwrite the 'zig' PATH symlink, the file '"));
+            try testing.expect(std.mem.containsAtLeast(u8, result.stderr, 1, "' already exists and is not a symlink"));
+        }
+
+        try std.fs.cwd().deleteDir(zig_exe_link);
+    }
+
     {
         const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{ "fetch", "0.7.0" });
         defer {
