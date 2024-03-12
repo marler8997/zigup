@@ -729,6 +729,9 @@ fn verifyPathLink(allocator: Allocator, path_link: []const u8) !void {
         while (path_it.next()) |path| {
             switch (try compareDir(path_link_dir_id, path)) {
                 .missing => continue,
+                // can't be the same directory because we were able to open and get
+                // the file id for path_link_dir_id
+                .access_denied => {},
                 .match => return,
                 .mismatch => {},
             }
@@ -755,6 +758,9 @@ fn verifyPathLink(allocator: Allocator, path_link: []const u8) !void {
         while (path_it.next()) |path| {
             switch (try compareDir(path_link_dir_id, path)) {
                 .missing => continue,
+                // can't be the same directory because we were able to open and get
+                // the file id for path_link_dir_id
+                .access_denied => {},
                 .match => return,
                 .mismatch => {},
             }
@@ -768,9 +774,10 @@ fn verifyPathLink(allocator: Allocator, path_link: []const u8) !void {
     return error.AlreadyReported;
 }
 
-fn compareDir(dir_id: FileId, other_dir: []const u8) !enum { missing, match, mismatch } {
+fn compareDir(dir_id: FileId, other_dir: []const u8) !enum { missing, access_denied, match, mismatch } {
     var dir = std.fs.cwd().openDir(other_dir, .{}) catch |err| switch (err) {
         error.FileNotFound, error.NotDir, error.BadPathName => return .missing,
+        error.AccessDenied => return .access_denied,
         else => |e| return e,
     };
     defer dir.close();
@@ -780,6 +787,7 @@ fn compareDir(dir_id: FileId, other_dir: []const u8) !enum { missing, match, mis
 fn enforceNoZig(path_link: []const u8, exe: []const u8) !void {
     var file = std.fs.cwd().openFile(exe, .{}) catch |err| switch (err) {
         error.FileNotFound, error.IsDir => return,
+        error.AccessDenied => return, // if there is a Zig it must not be accessible
         else => |e| return e,
     };
     defer file.close();
