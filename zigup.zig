@@ -466,6 +466,13 @@ pub fn loggyUpdateSymlink(target_path: []const u8, sym_link_path: []const u8, fl
         try std.os.unlink(sym_link_path);
     } else |e| switch (e) {
         error.FileNotFound => {},
+        error.NotLink => {
+            std.debug.print(
+                "unable to update/overwrite the 'zig' PATH symlink, the file '{s}' already exists and is not a symlink\n",
+                .{ sym_link_path},
+            );
+            std.os.exit(1);
+        },
         else => return e,
     }
     try loggySymlinkAbsolute(target_path, sym_link_path, flags);
@@ -725,6 +732,9 @@ fn verifyPathLink(allocator: Allocator, path_link: []const u8) !void {
         while (path_it.next()) |path| {
             switch (try compareDir(path_link_dir_id, path)) {
                 .missing => continue,
+                // can't be the same directory because we were able to open and get
+                // the file id for path_link_dir_id
+                .access_denied => {},
                 .match => return,
                 .mismatch => {},
             }
@@ -751,6 +761,9 @@ fn verifyPathLink(allocator: Allocator, path_link: []const u8) !void {
         while (path_it.next()) |path| {
             switch (try compareDir(path_link_dir_id, path)) {
                 .missing => continue,
+                // can't be the same directory because we were able to open and get
+                // the file id for path_link_dir_id
+                .access_denied => {},
                 .match => return,
                 .mismatch => {},
             }
@@ -764,9 +777,10 @@ fn verifyPathLink(allocator: Allocator, path_link: []const u8) !void {
     return error.AlreadyReported;
 }
 
-fn compareDir(dir_id: FileId, other_dir: []const u8) !enum { missing, match, mismatch } {
+fn compareDir(dir_id: FileId, other_dir: []const u8) !enum { missing, access_denied, match, mismatch } {
     var dir = std.fs.cwd().openDir(other_dir, .{}) catch |err| switch (err) {
         error.FileNotFound, error.NotDir, error.BadPathName => return .missing,
+        error.AccessDenied => return .access_denied,
         else => |e| return e,
     };
     defer dir.close();
@@ -776,6 +790,7 @@ fn compareDir(dir_id: FileId, other_dir: []const u8) !enum { missing, match, mis
 fn enforceNoZig(path_link: []const u8, exe: []const u8) !void {
     var file = std.fs.cwd().openFile(exe, .{}) catch |err| switch (err) {
         error.FileNotFound, error.IsDir => return,
+        error.AccessDenied => return, // if there is a Zig it must not be accessible
         else => |e| return e,
     };
     defer file.close();
@@ -868,7 +883,16 @@ fn createExeLink(link_target: []const u8, path_link: []const u8) !void {
         std.debug.print("Error: path_link (size {}) is too large (max {})\n", .{ path_link.len, std.fs.MAX_PATH_BYTES });
         return error.AlreadyReported;
     }
-    const file = try std.fs.cwd().createFile(path_link, .{});
+    const file = std.fs.cwd().createFile(path_link, .{}) catch |err| switch (err) {
+        error.IsDir => {
+            std.debug.print(
+                "unable to create the exe link, the path '{s}' is a directory\n",
+                .{ path_link},
+            );
+            std.os.exit(1);
+        },
+        else => |e| return e,
+    };
     defer file.close();
     try file.writer().writeAll(win32exelink.content[0..win32exelink.exe_offset]);
     try file.writer().writeAll(link_target);
