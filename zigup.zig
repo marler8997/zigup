@@ -148,6 +148,8 @@ fn help() void {
         \\                                that aren't the default, master, or marked to keep.
         \\  zigup keep VERSION            mark a compiler to be kept during clean
         \\  zigup run VERSION ARGS...     run the given VERSION of the compiler with the given ARGS...
+        \\  zigup latest                  set the default compiler to the current local master version without
+        \\                                downloading anything
         \\
         \\Uncommon Usage:
         \\
@@ -303,6 +305,18 @@ pub fn main2() !u8 {
         }
         std.log.err("'default' command requires 1 or 2 arguments but got {d}", .{args.len - 1});
         return 1;
+    }
+    if (std.mem.eql(u8, "latest", args[0])) {
+        if (args.len != 1) {
+            std.log.err("'latest' command has no arguments", .{});
+            return 1;
+        }
+        const install_dir_string = try getInstallDir(allocator, .{ .create = false });
+        defer allocator.free(install_dir_string);
+        const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, "master" });
+        defer allocator.free(compiler_dir);
+        try setDefaultCompiler(allocator, compiler_dir, .verify_existence);
+        return 0;
     }
     if (args.len == 1) {
         try fetchCompiler(allocator, args[0], .set_default);
@@ -466,7 +480,7 @@ pub fn loggyUpdateSymlink(target_path: []const u8, sym_link_path: []const u8, fl
         error.NotLink => {
             std.debug.print(
                 "unable to update/overwrite the 'zig' PATH symlink, the file '{s}' already exists and is not a symlink\n",
-                .{ sym_link_path},
+                .{sym_link_path},
             );
             std.os.exit(1);
         },
@@ -884,7 +898,7 @@ fn createExeLink(link_target: []const u8, path_link: []const u8) !void {
         error.IsDir => {
             std.debug.print(
                 "unable to create the exe link, the path '{s}' is a directory\n",
-                .{ path_link},
+                .{path_link},
             );
             std.os.exit(1);
         },
