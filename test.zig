@@ -23,7 +23,7 @@ pub fn main() !u8 {
     try std.fs.cwd().makeDir("scratch");
     const bin_dir = "scratch" ++ sep ++ "bin";
     try std.fs.cwd().makeDir(bin_dir);
-    const install_dir = if (builtin.os.tag == .windows) (bin_dir ++ "\\zig") else ("scratch/install");
+    const install_dir = "scratch/install";
     try std.fs.cwd().makeDir(install_dir);
 
     // NOTE: for now we are incorrectly assuming the install dir is CWD/zig-out
@@ -35,7 +35,7 @@ pub fn main() !u8 {
         .{},
     );
 
-    const install_args = if (builtin.os.tag == .windows) [_][]const u8{} else [_][]const u8{ "--install-dir", install_dir };
+    const install_args = [_][]const u8{ "--install-dir", install_dir };
     const zigup_args = &[_][]const u8{zigup} ++ install_args;
 
     var allocator_store = std.heap.ArenaAllocator.init(std.heap.page_allocator);

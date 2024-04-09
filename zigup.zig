@@ -72,27 +72,37 @@ fn ignoreHttpCallback(request: []const u8) void {
     _ = request;
 }
 
-fn getHomeDir() ![]const u8 {
-    return std.os.getenv("HOME") orelse {
-        std.log.err("cannot find install directory, $HOME environment variable is not set", .{});
-        return error.MissingHomeEnvironmentVariable;
-    };
-}
-
 fn allocInstallDirString(allocator: Allocator) ![]const u8 {
     // TODO: maybe support ZIG_INSTALL_DIR environment variable?
     // TODO: maybe support a file on the filesystem to configure install dir?
-    if (builtin.os.tag == .windows) {
-        const self_exe_dir = try std.fs.selfExeDirPathAlloc(allocator);
-        defer allocator.free(self_exe_dir);
-        return std.fs.path.join(allocator, &.{ self_exe_dir, "zig" });
+
+    const install_parent_env_var = comptime switch (builtin.os.tag) {
+        .windows => "LOCALAPPDATA",
+        else => "HOME",
+    };
+    const install_dir_name = comptime switch (builtin.os.tag) {
+        .windows => "zigup", // Note that %LOCALAPPDATA%/zig is used by zig itself.
+        else => "zig",
+    };
+
+    const install_parent_path = std.process.getEnvVarOwned(allocator, install_parent_env_var) catch |err| {
+        std.log.err(
+            "cannot find install directory: failed to get value for environment variable '{s}'",
+            .{install_parent_env_var},
+        );
+        return err;
+    };
+    defer allocator.free(install_parent_path);
+
+    if (!std.fs.path.isAbsolute(install_parent_path)) {
+        std.log.err(
+            "'{s}' environment variable '{s}' is not set to an absolute path",
+            .{ install_parent_env_var, install_parent_path },
+        );
+        return error.BadEnvironmentVariable;
     }
-    const home = try getHomeDir();
-    if (!std.fs.path.isAbsolute(home)) {
-        std.log.err("$HOME environment variable '{s}' is not an absolute path", .{home});
-        return error.BadHomeEnvironmentVariable;
-    }
-    return std.fs.path.join(allocator, &[_][]const u8{ home, "zig" });
+
+    return std.fs.path.join(allocator, &[_][]const u8{ install_parent_path, install_dir_name });
 }
 const GetInstallDirOptions = struct {
     create: bool,
