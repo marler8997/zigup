@@ -4,8 +4,8 @@
 
     .dependencies = .{
         .zarc = .{
-            .url = "https://github.com/marler8997/zarc/archive/6ed370681d0e0c5d8ef32ad63e440d0b3effc8a8.tar.gz",
-            .hash = "1220a69ceaac42e5a3593161c3b4ab1ce7dbc574b1a80398a7cb3100fbfa07baf372",
+            .url = "https://github.com/marler8997/zarc/archive/1556f8e6c79e81d792024d5266e282638fcc50b5.tar.gz",
+            .hash = "1220ad2d1e1e8c3b7c4734eaa90f9633ca2c04c5bf346ede1a4f1b18657db36aa164",
             .lazy = true,
         },
     },
