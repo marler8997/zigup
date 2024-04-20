@@ -5,7 +5,6 @@ const mem = std.mem;
 const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
 
-const ziget = @import("ziget");
 const zarc = @import("zarc");
 
 const fixdeletetree = @import("fixdeletetree.zig");
@@ -36,36 +35,82 @@ fn loginfo(comptime fmt: []const u8, args: anytype) void {
     }
 }
 
-fn download(allocator: Allocator, url: []const u8, writer: anytype) !void {
-    var download_options = ziget.request.DownloadOptions{
-        .flags = 0,
-        .allocator = allocator,
-        .maxRedirects = 10,
-        .forwardBufferSize = 4096,
-        .maxHttpResponseHeaders = 8192,
-        .onHttpRequest = ignoreHttpCallback,
-        .onHttpResponse = ignoreHttpCallback,
-    };
-    var dowload_state = ziget.request.DownloadState.init();
-    try ziget.request.download(
-        ziget.url.parseUrl(url) catch unreachable,
-        writer,
-        download_options,
-        &dowload_state,
+pub fn oom(e: error{OutOfMemory}) noreturn {
+    @panic(@errorName(e));
+}
+
+const DownloadResult = union(enum) {
+    ok: void,
+    err: []u8,
+    pub fn deinit(self: DownloadResult, allocator: Allocator) void {
+        switch (self) {
+            .ok => {},
+            .err => |e| allocator.free(e),
+        }
+    }
+};
+fn download(allocator: Allocator, url: []const u8, writer: anytype) DownloadResult {
+    const uri = std.Uri.parse(url) catch |err| std.debug.panic(
+        "failed to parse url '{s}' with {s}", .{url, @errorName(err)}
     );
+
+    var client = std.http.Client{ .allocator = allocator };
+    defer client.deinit();
+
+    client.initDefaultProxies(allocator) catch |err| return .{ .err = std.fmt.allocPrint(
+        allocator, "failed to query the HTTP proxy settings with {s}", .{ @errorName(err) }
+    ) catch |e| oom(e) };
+
+    var header_buffer: [4096]u8 = undefined;
+    var request = client.open(.GET, uri, .{
+        .server_header_buffer = &header_buffer,
+        .keep_alive = false,
+    }) catch |err| return .{ .err = std.fmt.allocPrint(
+        allocator, "failed to connect to the HTTP server with {s}", .{ @errorName(err) }
+    ) catch |e| oom(e) };
+
+    defer request.deinit();
+
+    request.send() catch |err| return .{ .err = std.fmt.allocPrint(
+        allocator, "failed to send the HTTP request with {s}", .{ @errorName(err) }
+    ) catch |e| oom(e) };
+    request.wait() catch |err| return .{ .err = std.fmt.allocPrint(
+        allocator, "failed to read the HTTP response headers with {s}", .{ @errorName(err) }
+    ) catch |e| oom(e) };
+
+    if (request.response.status != .ok) return .{ .err = std.fmt.allocPrint(
+        allocator,
+        "HTTP server replied with unsuccessful response '{d} {s}'",
+        .{ @intFromEnum(request.response.status), request.response.status.phrase() orelse "" },
+    ) catch |e| oom(e) };
+
+    // TODO: we take advantage of request.response.content_length
+
+    var buf: [std.mem.page_size]u8 = undefined;
+    while (true) {
+        const len = request.reader().read(&buf) catch |err| return .{ .err = std.fmt.allocPrint(
+            allocator, "failed to read the HTTP response body with {s}'", .{ @errorName(err) }
+        ) catch |e| oom(e) };
+        if (len == 0)
+            return .ok;
+        writer.writeAll(buf[0..len]) catch |err| return .{ .err = std.fmt.allocPrint(
+            allocator, "failed to write the HTTP response body with {s}'", .{ @errorName(err) }
+        ) catch |e| oom(e) };
+    }
 }
 
-fn downloadToFileAbsolute(allocator: Allocator, url: []const u8, file_absolute: []const u8) !void {
-    const file = try std.fs.createFileAbsolute(file_absolute, .{});
-    defer file.close();
-    try download(allocator, url, file.writer());
-}
+const DownloadStringResult = union(enum) {
+    ok: []u8,
+    err: []u8,
 
-fn downloadToString(allocator: Allocator, url: []const u8) ![]u8 {
-    var response_array_list = try ArrayList(u8).initCapacity(allocator, 20 * 1024); // 20 KB (modify if response is expected to be bigger)
-    errdefer response_array_list.deinit();
-    try download(allocator, url, response_array_list.writer());
-    return response_array_list.toOwnedSlice();
+};
+fn downloadToString(allocator: Allocator, url: []const u8) DownloadStringResult {
+    var response_array_list = ArrayList(u8).initCapacity(allocator, 20 * 1024) catch |e| oom(e); // 20 KB (modify if response is expected to be bigger)
+    defer response_array_list.deinit();
+    switch (download(allocator, url, response_array_list.writer())) {
+        .ok => return .{ .ok = response_array_list.toOwnedSlice() catch |e| oom(e) },
+        .err => |e| return .{ .err = e },
+    }
 }
 
 fn ignoreHttpCallback(request: []const u8) void {
@@ -73,7 +118,7 @@ fn ignoreHttpCallback(request: []const u8) void {
 }
 
 fn getHomeDir() ![]const u8 {
-    return std.os.getenv("HOME") orelse {
+    return std.posix.getenv("HOME") orelse {
         std.log.err("cannot find install directory, $HOME environment variable is not set", .{});
         return error.MissingHomeEnvironmentVariable;
     };
@@ -282,13 +327,13 @@ pub fn main2() !u8 {
                 if (!std.mem.eql(u8, version_string, "master"))
                     break :init_resolved version_string;
 
-                var optional_master_dir: ?[]const u8 = blk: {
-                    var install_dir = std.fs.openIterableDirAbsolute(install_dir_string, .{}) catch |e| switch (e) {
+                const optional_master_dir: ?[]const u8 = blk: {
+                    var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
                         error.FileNotFound => break :blk null,
                         else => return e,
                     };
                     defer install_dir.close();
-                    break :blk try getMasterDir(allocator, &install_dir.dir);
+                    break :blk try getMasterDir(allocator, &install_dir);
                 };
                 // no need to free master_dir, this is a short lived program
                 break :init_resolved optional_master_dir orelse {
@@ -408,10 +453,11 @@ const DownloadIndex = struct {
 };
 
 fn fetchDownloadIndex(allocator: Allocator) !DownloadIndex {
-    const text = downloadToString(allocator, download_index_url) catch |e| switch (e) {
-        else => {
-            std.log.err("failed to download '{s}': {}", .{ download_index_url, e });
-            return e;
+    const text = switch (downloadToString(allocator, download_index_url)) {
+        .ok => |text| text,
+        .err => |err| {
+            std.log.err("download '{s}' failed: {s}", .{download_index_url, err});
+            return error.AlreadyReported;
         },
     };
     errdefer allocator.free(text);
@@ -443,24 +489,24 @@ pub fn loggyRenameAbsolute(old_path: []const u8, new_path: []const u8) !void {
     try std.fs.renameAbsolute(old_path, new_path);
 }
 
-pub fn loggySymlinkAbsolute(target_path: []const u8, sym_link_path: []const u8, flags: std.fs.SymLinkFlags) !void {
+pub fn loggySymlinkAbsolute(target_path: []const u8, sym_link_path: []const u8, flags: std.fs.Dir.SymLinkFlags) !void {
     loginfo("ln -s '{s}' '{s}'", .{ target_path, sym_link_path });
     // NOTE: can't use symLinkAbsolute because it requires target_path to be absolute but we don't want that
     //       not sure if it is a bug in the standard lib or not
     //try std.fs.symLinkAbsolute(target_path, sym_link_path, flags);
     _ = flags;
-    try std.os.symlink(target_path, sym_link_path);
+    try std.posix.symlink(target_path, sym_link_path);
 }
 
 /// returns: true if the symlink was updated, false if it was already set to the given `target_path`
-pub fn loggyUpdateSymlink(target_path: []const u8, sym_link_path: []const u8, flags: std.fs.SymLinkFlags) !bool {
+pub fn loggyUpdateSymlink(target_path: []const u8, sym_link_path: []const u8, flags: std.fs.Dir.SymLinkFlags) !bool {
     var current_target_path_buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
     if (std.fs.readLinkAbsolute(sym_link_path, &current_target_path_buffer)) |current_target_path| {
         if (std.mem.eql(u8, target_path, current_target_path)) {
             loginfo("symlink '{s}' already points to '{s}'", .{ sym_link_path, target_path });
             return false; // already up-to-date
         }
-        try std.os.unlink(sym_link_path);
+        try std.posix.unlink(sym_link_path);
     } else |e| switch (e) {
         error.FileNotFound => {},
         error.NotLink => {
@@ -468,7 +514,7 @@ pub fn loggyUpdateSymlink(target_path: []const u8, sym_link_path: []const u8, fl
                 "unable to update/overwrite the 'zig' PATH symlink, the file '{s}' already exists and is not a symlink\n",
                 .{ sym_link_path},
             );
-            std.os.exit(1);
+            std.process.exit(1);
         },
         else => return e,
     }
@@ -486,7 +532,8 @@ fn existsAbsolute(absolutePath: []const u8) !bool {
         error.SymLinkLoop => return e,
         error.FileBusy => return e,
         error.Unexpected => unreachable,
-        error.InvalidUtf8 => unreachable,
+        error.InvalidUtf8 => return e,
+        error.InvalidWtf8 => return e,
         error.ReadOnlyFileSystem => unreachable,
         error.NameTooLong => unreachable,
         error.BadPathName => unreachable,
@@ -498,7 +545,7 @@ fn listCompilers(allocator: Allocator) !void {
     const install_dir_string = try getInstallDir(allocator, .{ .create = false });
     defer allocator.free(install_dir_string);
 
-    var install_dir = std.fs.openIterableDirAbsolute(install_dir_string, .{}) catch |e| switch (e) {
+    var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
         error.FileNotFound => return,
         else => return e,
     };
@@ -521,10 +568,10 @@ fn keepCompiler(allocator: Allocator, compiler_version: []const u8) !void {
     const install_dir_string = try getInstallDir(allocator, .{ .create = true });
     defer allocator.free(install_dir_string);
 
-    var install_dir = try std.fs.openIterableDirAbsolute(install_dir_string, .{});
+    var install_dir = try std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true });
     defer install_dir.close();
 
-    var compiler_dir = install_dir.dir.openDir(compiler_version, .{}) catch |e| switch (e) {
+    var compiler_dir = install_dir.openDir(compiler_version, .{}) catch |e| switch (e) {
         error.FileNotFound => {
             std.log.err("compiler not found: {s}", .{compiler_version});
             return error.AlreadyReported;
@@ -543,12 +590,12 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
     const default_comp_opt = try getDefaultCompiler(allocator);
     defer if (default_comp_opt) |default_compiler| allocator.free(default_compiler);
 
-    var install_dir = std.fs.openIterableDirAbsolute(install_dir_string, .{}) catch |e| switch (e) {
+    var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
         error.FileNotFound => return,
         else => return e,
     };
     defer install_dir.close();
-    const master_points_to_opt = try getMasterDir(allocator, &install_dir.dir);
+    const master_points_to_opt = try getMasterDir(allocator, &install_dir);
     defer if (master_points_to_opt) |master_points_to| allocator.free(master_points_to);
     if (compiler_name_opt) |compiler_name| {
         if (getKeepReason(master_points_to_opt, default_comp_opt, compiler_name)) |reason| {
@@ -556,7 +603,7 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
             return error.AlreadyReported;
         }
         loginfo("deleting '{s}{c}{s}'", .{ install_dir_string, std.fs.path.sep, compiler_name });
-        try fixdeletetree.deleteTree(install_dir.dir, compiler_name);
+        try fixdeletetree.deleteTree(install_dir, compiler_name);
     } else {
         var it = install_dir.iterate();
         while (try it.next()) |entry| {
@@ -568,7 +615,7 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
             }
 
             {
-                var compiler_dir = try install_dir.dir.openDir(entry.name, .{});
+                var compiler_dir = try install_dir.openDir(entry.name, .{});
                 defer compiler_dir.close();
                 if (compiler_dir.access("keep", .{})) |_| {
                     loginfo("keeping '{s}' (has keep file)", .{entry.name});
@@ -579,7 +626,7 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
                 }
             }
             loginfo("deleting '{s}{c}{s}'", .{ install_dir_string, std.fs.path.sep, entry.name });
-            try fixdeletetree.deleteTree(install_dir.dir, entry.name);
+            try fixdeletetree.deleteTree(install_dir, entry.name);
         }
     }
 }
@@ -632,16 +679,16 @@ fn readMasterDir(buffer: *[std.fs.MAX_PATH_BYTES]u8, install_dir: *std.fs.Dir) !
 fn getDefaultCompiler(allocator: Allocator) !?[]const u8 {
     var buffer: [std.fs.MAX_PATH_BYTES + 1]u8 = undefined;
     const slice_path = (try readDefaultCompiler(allocator, &buffer)) orelse return null;
-    var path_to_return = try allocator.alloc(u8, slice_path.len);
-    std.mem.copy(u8, path_to_return, slice_path);
+    const path_to_return = try allocator.alloc(u8, slice_path.len);
+    @memcpy(path_to_return, slice_path);
     return path_to_return;
 }
 
 fn getMasterDir(allocator: Allocator, install_dir: *std.fs.Dir) !?[]const u8 {
     var buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
     const slice_path = (try readMasterDir(&buffer, install_dir)) orelse return null;
-    var path_to_return = try allocator.alloc(u8, slice_path.len);
-    std.mem.copy(u8, path_to_return, slice_path);
+    const path_to_return = try allocator.alloc(u8, slice_path.len);
+    @memcpy(path_to_return, slice_path);
     return path_to_return;
 }
 
@@ -754,7 +801,7 @@ fn verifyPathLink(allocator: Allocator, path_link: []const u8) !void {
             }
         }
     } else {
-        var path_it = std.mem.tokenize(u8, std.os.getenv("PATH") orelse "", ":");
+        var path_it = std.mem.tokenize(u8, std.posix.getenv("PATH") orelse "", ":");
         while (path_it.next()) |path| {
             switch (try compareDir(path_link_dir_id, path)) {
                 .missing => continue,
@@ -798,11 +845,11 @@ fn enforceNoZig(path_link: []const u8, exe: []const u8) !void {
 
 const FileId = struct {
     dev: if (builtin.os.tag == .windows) u32 else blk: {
-        var st: std.os.Stat = undefined;
+        const st: std.posix.Stat = undefined;
         break :blk @TypeOf(st.dev);
     },
     ino: if (builtin.os.tag == .windows) u64 else blk: {
-        var st: std.os.Stat = undefined;
+        const st: std.posix.Stat = undefined;
         break :blk @TypeOf(st.ino);
     },
 
@@ -818,7 +865,7 @@ const FileId = struct {
                 .ino = (@as(u64, @intCast(info.nFileIndexHigh)) << 32) | @as(u64, @intCast(info.nFileIndexLow)),
             };
         }
-        const st = try std.os.fstat(file.handle);
+        const st = try std.posix.fstat(file.handle);
         return FileId{
             .dev = st.dev,
             .ino = st.ino,
@@ -886,7 +933,7 @@ fn createExeLink(link_target: []const u8, path_link: []const u8) !void {
                 "unable to create the exe link, the path '{s}' is a directory\n",
                 .{ path_link},
             );
-            std.os.exit(1);
+            std.process.exit(1);
         },
         else => |e| return e,
     };
@@ -927,16 +974,22 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
         const archive_absolute = try std.fs.path.join(allocator, &[_][]const u8{ installing_dir, archive_basename });
         defer allocator.free(archive_absolute);
         loginfo("downloading '{s}' to '{s}'", .{ url, archive_absolute });
-        downloadToFileAbsolute(allocator, url, archive_absolute) catch |e| switch (e) {
-            error.HttpNon200StatusCode => {
-                // TODO: more information would be good
-                std.log.err("HTTP request failed (TODO: improve ziget library to get better error)", .{});
+
+        switch (blk: {
+            const file = try std.fs.createFileAbsolute(archive_absolute, .{});
+            // note: important to close the file before we handle errors below
+            //       since it will delete the parent directory of this file
+            defer file.close();
+            break :blk download(allocator, url, file.writer());
+        }) {
+            .ok => {},
+            .err => |err| {
+                std.log.err("download '{s}' failed: {s}", .{url, err});
                 // this removes the installing dir if the http request fails so we dont have random directories
                 try loggyDeleteTreeAbsolute(installing_dir);
                 return error.AlreadyReported;
             },
-            else => return e,
-        };
+        }
 
         if (std.mem.endsWith(u8, archive_basename, ".tar.xz")) {
             archive_root_dir = archive_basename[0 .. archive_basename.len - ".tar.xz".len];
@@ -1004,7 +1057,7 @@ fn logRun(allocator: Allocator, argv: []const []const u8) !void {
         } else {
             prefix = true;
         }
-        std.mem.copy(u8, buffer[offset .. offset + arg.len], arg);
+        @memcpy(buffer[offset .. offset + arg.len], arg);
         offset += arg.len;
     }
     std.debug.assert(offset == buffer.len);

@@ -75,14 +75,14 @@ fn consoleCtrlHandler(ctrl_type: u32) callconv(@import("std").os.windows.WINAPI)
     log.info("caught ctrl signal {d} ({s}), stopping process...", .{ ctrl_type, name });
     const exit_code = switch (global.child.kill() catch |err| {
         log.err("failed to kill process, error={s}", .{@errorName(err)});
-        std.os.exit(0xff);
+        std.process.exit(0xff);
     }) {
         .Exited => |e| e,
         .Signal => 0xff,
         .Stopped => 0xff,
         .Unknown => 0xff,
     };
-    std.os.exit(exit_code);
+    std.process.exit(exit_code);
     unreachable;
 }
 

@@ -12,19 +12,19 @@ jobs:
       - uses: actions/checkout@v2
       - uses: goto-bus-stop/setup-zig@v1
         with:
-          version: 0.11.0
+          version: 0.12.0
       - run: |
-          zig build test -Dfetch -Dci_target=${{matrix.os}}-${{matrix.arch}}
+          zig build test -Dci_target=${{matrix.os}}-${{matrix.arch}}
       - run: |
-          zig build -Dfetch -Dci_target=ubuntu-latest-x86_64 -p zig-out-ubuntu-latest-x86_64
+          zig build -Dci_target=ubuntu-latest-x86_64 -p zig-out-ubuntu-latest-x86_64
       - run: |
-          zig build -Dfetch -Dci_target=ubuntu-latest-aarch64 -p zig-out-ubuntu-latest-aarch64
+          zig build -Dci_target=ubuntu-latest-aarch64 -p zig-out-ubuntu-latest-aarch64
       - run: |
-          zig build -Dfetch -Dci_target=macos-latest-x86_64 -p zig-out-macos-latest-x86_64
+          zig build -Dci_target=macos-latest-x86_64 -p zig-out-macos-latest-x86_64
       - run: |
-          zig build -Dfetch -Dci_target=macos-latest-aarch64 -p zig-out-macos-latest-aarch64
+          zig build -Dci_target=macos-latest-aarch64 -p zig-out-macos-latest-aarch64
       - run: |
-          zig build -Dfetch -Dci_target=windows-latest-x86_64 -p zig-out-windows-latest-x86_64
+          zig build -Dci_target=windows-latest-x86_64 -p zig-out-windows-latest-x86_64
       - uses: actions/upload-artifact@v2
         with:
           name: zigup ${{ matrix.os }}-${{ matrix.arch }}

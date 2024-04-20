@@ -1,0 +1,23 @@
+.{
+    .name = "zigup",
+    .version = "0.0.1",
+
+    .dependencies = .{
+        .zarc = .{
+            .url = "https://github.com/marler8997/zarc/archive/6ed370681d0e0c5d8ef32ad63e440d0b3effc8a8.tar.gz",
+            .hash = "1220a69ceaac42e5a3593161c3b4ab1ce7dbc574b1a80398a7cb3100fbfa07baf372",
+            .lazy = true,
+        },
+    },
+
+    .paths = .{
+        "LICENSE",
+        "README.md",
+        "build.zig",
+        "build.zig.zon",
+        "fixdeletetree.zig",
+        "test.zig",
+        "win32exelink.zig",
+        "zigup.zig",
+    },
+}
