@@ -228,7 +228,7 @@ fn LimitedReader(comptime UnderlyingReader: type) type {
         }
     };
 }
-fn limited_reader(reader: anytype, limit: usize) LimitedReader(@TypeOf(reader)) {
+fn limitedReader(reader: anytype, limit: usize) LimitedReader(@TypeOf(reader)) {
     return .{
         .underlying_reader = reader,
         .remaining = limit,
@@ -240,7 +240,6 @@ fn limited_reader(reader: anytype, limit: usize) LimitedReader(@TypeOf(reader)) 
 /// `writer` can be anything with a `writeAll(self: *Self, chunk: []const u8) anyerror!void` method.
 pub fn decompress(
     method: CompressionMethod,
-    compressed_size: u32,
     uncompressed_size: u32,
     reader: anytype,
     writer: anytype,
@@ -249,29 +248,25 @@ pub fn decompress(
 
     switch (method) {
         .store => {
-            if (compressed_size != uncompressed_size)
-                return error.ZipUncompressSizeMismatch;
-
             var buf: [std.mem.page_size]u8 = undefined;
-            var remaining: u32 = compressed_size;
-            while (remaining > 0) {
-                const chunk = buf[0..@min(remaining, buf.len)];
-                try reader.readNoEof(chunk);
-                try writer.writeAll(chunk);
-                hash.update(chunk);
-                remaining -= @intCast(chunk.len);
+            while (true) {
+                const len = try reader.read(&buf);
+                if (len == 0) break;
+                try writer.writeAll(buf[0 ..len]);
+                hash.update(buf[0 ..len]);
             }
         },
         .deflate, .deflate64 => {
             var br = std.io.bufferedReader(reader);
-            var lr = limited_reader(br.reader(), compressed_size);
             var total_uncompressed: u32 = 0;
-            var decompressor = std.compress.flate.decompressor(lr.reader());
+            var decompressor = std.compress.flate.decompressor(br.reader());
             while (try decompressor.next()) |chunk| {
                 try writer.writeAll(chunk);
                 hash.update(chunk);
                 total_uncompressed += @intCast(chunk.len);
             }
+            if (br.end != br.start)
+                return error.ZipDeflateTruncated;
             if (total_uncompressed != uncompressed_size)
                 return error.ZipUncompressSizeMismatch;
         },
@@ -385,14 +380,13 @@ pub const Iterator = struct {
                     @as(u64, local_header.extra_len);
             };
 
-            if (filename.len == 0 or filename[0] == '/') {
-                return error.Invalid;
-            }
+            if (filename.len == 0 or filename[0] == '/')
+                return error.ZipBadFilename;
 
             // All entries that end in '/' are directories
             if (filename[filename.len - 1] == '/') {
                 if (self.header.uncompressed_size != 0)
-                    return error.ZipInvalid;
+                    return error.ZipBadDirectorySize;
                 try dest.makePath(filename[0 .. filename.len - 1]);
                 return std.hash.Crc32.hash(&.{});
             }
@@ -413,13 +407,16 @@ pub const Iterator = struct {
                 @as(u64, 30) +
                 local_data_header_offset;
             try zip_file.seekTo(local_data_file_offset);
-            return try decompress(
+            var limited_reader = limitedReader(zip_file.reader(), self.header.compressed_size);
+            const crc = try decompress(
                 self.header.compression_method,
-                self.header.compressed_size,
                 self.header.uncompressed_size,
-                zip_file.reader(),
+                limited_reader.reader(),
                 out_file.writer(),
             );
+            if (limited_reader.remaining != 0)
+                return error.ZipDecompressTruncated;
+            return crc;
         }
     };
 };
