@@ -54,6 +54,17 @@ pub fn build(b: *std.Build) !void {
     }
 
     addTest(b, exe, target, optimize);
+
+    {
+        const unzip = b.addExecutable(.{
+            .name = "unzip",
+            .root_source_file = b.path("unzip.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        const install = b.addInstallArtifact(unzip, .{});
+        b.step("unzip", "Build/install the unzip cmdline tool").dependOn(&install.step);
+    }
 }
 
 fn addTest(
@@ -94,9 +105,6 @@ fn addZigupExe(
 
     if (target.result.os.tag == .windows) {
         exe.root_module.addImport("win32exelink", win32exelink_mod.?);
-        if (b.lazyDependency("zarc", .{})) |zarc_dep| {
-            exe.root_module.addImport("zarc", zarc_dep.module("zarc"));
-        }
     }
 
     return exe;

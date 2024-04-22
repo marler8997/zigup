@@ -2,10 +2,10 @@ const std = @import("std");
 const builtin = @import("builtin");
 const mem = std.mem;
 
+const zip = @import("zip.zig");
+
 const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
-
-const zarc = @import("zarc");
 
 const fixdeletetree = @import("fixdeletetree.zig");
 
@@ -1007,10 +1007,7 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
                     var timer = try std.time.Timer.start();
                     var archive_file = try std.fs.openFileAbsolute(archive_absolute, .{});
                     defer archive_file.close();
-                    const reader = archive_file.reader();
-                    var archive = try zarc.zip.load(allocator, reader);
-                    defer archive.deinit(allocator);
-                    _ = try archive.extract(reader, installing_dir_opened, .{});
+                    try zip.pipeToFileSystem(installing_dir_opened, archive_file);
                     const time = timer.read();
                     loginfo("extracted archive in {d:.2} s", .{@as(f32, @floatFromInt(time)) / @as(f32, @floatFromInt(std.time.ns_per_s))});
                 }

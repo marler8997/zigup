@@ -58,6 +58,4 @@ Zigup is currently built/tested using zig 0.11.0.
 
 # Dependencies
 
-The windows target depends on https://github.com/SuperAuguste/zarc to extract zip files.  This repo might point to my fork if there are needed changes pending the acceptance of a PR: https://github.com/marler8997/zarc.
-
 On linux and macos, zigup depends on `tar` to extract the compiler archive files (this may change in the future).
