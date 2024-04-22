@@ -252,8 +252,8 @@ pub fn decompress(
             while (true) {
                 const len = try reader.read(&buf);
                 if (len == 0) break;
-                try writer.writeAll(buf[0 ..len]);
-                hash.update(buf[0 ..len]);
+                try writer.writeAll(buf[0..len]);
+                hash.update(buf[0..len]);
             }
         },
         .deflate, .deflate64 => {
