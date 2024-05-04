@@ -2,7 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const mem = std.mem;
 
-const zip = @import("zip.zig");
+const zip = @import("lib/zip.zig");
 
 const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
