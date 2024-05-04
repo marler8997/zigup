@@ -11,7 +11,8 @@ pub fn build(b: *std.Build) !void {
     //var github_release_step = b.step("github-release", "Build the github-release binaries");
     //try addGithubReleaseExe(b, github_release_step, ziget_repo, "x86_64-linux", .std);
 
-    const target = if (b.option([]const u8, "ci_target", "the CI target being built")) |ci_target|
+    const maybe_ci_target = b.option([]const u8, "ci_target", "the CI target being built");
+    const target = if (maybe_ci_target) |ci_target|
         b.resolveTargetQuery(try std.zig.CrossTarget.parse(.{ .arch_os_abi = ci_target_map.get(ci_target) orelse {
             std.log.err("unknown ci_target '{s}'", .{ci_target});
             std.process.exit(1);
@@ -19,7 +20,10 @@ pub fn build(b: *std.Build) !void {
     else
         b.standardTargetOptions(.{});
 
-    const optimize = b.standardOptimizeOption(.{});
+    // Compile in ReleaseSafe on Windows for faster extraction
+    const optimize: std.builtin.OptimizeMode = if (
+        (maybe_ci_target != null) and (target.result.os.tag == .windows)
+    ) .ReleaseSafe else b.standardOptimizeOption(.{});
 
     const win32exelink_mod: ?*std.Build.Module = blk: {
         if (target.result.os.tag == .windows) {

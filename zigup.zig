@@ -1010,7 +1010,7 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
                     var timer = try std.time.Timer.start();
                     var archive_file = try std.fs.openFileAbsolute(archive_absolute, .{});
                     defer archive_file.close();
-                    try zip.pipeToFileSystem(installing_dir_opened, archive_file);
+                    try zip.extract(installing_dir_opened, archive_file.seekableStream(), .{});
                     const time = timer.read();
                     loginfo("extracted archive in {d:.2} s", .{@as(f32, @floatFromInt(time)) / @as(f32, @floatFromInt(std.time.ns_per_s))});
                 }
