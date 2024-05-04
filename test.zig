@@ -18,38 +18,66 @@ fn setPathEnv(new_path: []const u8) void {
 const expected_zig_version_0_7_0 = if (builtin.os.tag == .macos) "0.7.0+9af53f8e0" else "0.7.0";
 
 pub fn main() !u8 {
-    std.log.info("running test!", .{});
-    try fixdeletetree.deleteTree(std.fs.cwd(), "scratch");
-    try std.fs.cwd().makeDir("scratch");
-    const bin_dir = "scratch" ++ sep ++ "bin";
+    var allocator_instance = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    //defer allocator_instance.deinit();
+    const allocator = allocator_instance.allocator();
+
+    const all_cmdline_args = try std.process.argsAlloc(allocator);
+    if (all_cmdline_args.len <= 1) {
+        try std.io.getStdErr().writer().print("Usage: test ZIGUP_EXE TEST_DIR\n", .{});
+        return 0xff;
+    }
+    const cmdline_args = all_cmdline_args[1..];
+    if (cmdline_args.len != 2) {
+        std.log.err("expected 1 cmdline arg but got {}", .{cmdline_args.len});
+        return 0xff;
+    }
+
+    const zigup_src_exe = cmdline_args[0];
+    const test_dir = cmdline_args[1];
+    std.log.info("run zigup tests", .{});
+    std.log.info("zigup exe '{s}'", .{zigup_src_exe});
+    std.log.info("test directory '{s}'", .{test_dir});
+
+    if (!std.fs.path.isAbsolute(test_dir)) {
+        std.log.err("currently the test requires an absolute test directory path", .{});
+        return 0xff;
+    }
+
+    try fixdeletetree.deleteTree(std.fs.cwd(), test_dir);
+    try std.fs.cwd().makePath(test_dir);
+    const bin_dir = try std.fs.path.join(allocator, &.{ test_dir, "bin" });
     try std.fs.cwd().makeDir(bin_dir);
-    const install_dir = if (builtin.os.tag == .windows) (bin_dir ++ "\\zig") else ("scratch/install");
+    const install_sub_path = if (builtin.os.tag == .windows) "bin\\zig" else "install";
+    const install_dir = try std.fs.path.join(allocator, &.{test_dir, install_sub_path });
     try std.fs.cwd().makeDir(install_dir);
 
-    // NOTE: for now we are incorrectly assuming the install dir is CWD/zig-out
-    const zigup = comptime "." ++ sep ++ bin_dir ++ sep ++ "zigup" ++ builtin.target.exeFileExt();
+    const zigup = try std.fs.path.join(allocator, &.{
+        test_dir,
+        "bin",
+        "zigup" ++ comptime builtin.target.exeFileExt()
+    });
     try std.fs.cwd().copyFile(
-        comptime "zig-out" ++ sep ++ "bin" ++ sep ++ "zigup" ++ builtin.target.exeFileExt(),
+        zigup_src_exe,
         std.fs.cwd(),
         zigup,
         .{},
     );
     if (builtin.os.tag == .windows) {
-        const zigup_pdb = comptime "." ++ sep ++ bin_dir ++ sep ++ "zigup.pdb";
-        try std.fs.cwd().copyFile(
-            comptime "zig-out" ++ sep ++ "bin" ++ sep ++ "zigup.pdb",
-            std.fs.cwd(),
-            zigup_pdb,
-            .{},
+        const zigup_src_pdb = try std.mem.concat(
+            allocator, u8, &.{ zigup_src_exe[0 .. zigup_src_exe.len-4], ".pdb" }
         );
+        defer allocator.free(zigup_src_pdb);
+        const zigup_pdb = try std.fs.path.join(allocator, &.{ test_dir, "bin\\zigup.pdb" });
+        defer allocator.free(zigup_pdb);
+        try std.fs.cwd().copyFile(zigup_src_pdb, std.fs.cwd(), zigup_pdb, .{});
     }
 
-    const install_args = if (builtin.os.tag == .windows) [_][]const u8{} else [_][]const u8{ "--install-dir", install_dir };
+    const install_args = if (builtin.os.tag == .windows) [_][]const u8{
+    } else [_][]const u8{
+        "--install-dir", install_dir,
+    };
     const zigup_args = &[_][]const u8{zigup} ++ install_args;
-
-    var allocator_store = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer allocator_store.deinit();
-    const allocator = allocator_store.allocator();
 
     const path_link = try std.fs.path.join(allocator, &.{ bin_dir, comptime "zig" ++ builtin.target.exeFileExt() });
     defer allocator.free(path_link);
@@ -60,14 +88,9 @@ pub fn main() !u8 {
         std.log.err("the PATH environment variable does not exist?", .{});
         return 1;
     };
-    const cwd = try std.process.getCwdAlloc(allocator);
 
     const original_path_env = path_env_ptr.*;
-    {
-        const scratch_bin_path = try std.fs.path.join(allocator, &.{ cwd, bin_dir });
-        defer allocator.free(scratch_bin_path);
-        setPathEnv(try std.mem.concat(allocator, u8, &.{ scratch_bin_path, path_env_sep, original_path_env }));
-    }
+    setPathEnv(try std.mem.concat(allocator, u8, &.{ bin_dir, path_env_sep, original_path_env }));
 
     {
         const result = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{ "default", "master" });
@@ -139,7 +162,8 @@ pub fn main() !u8 {
     // verify we print a nice error message if we can't update the symlink
     // because it's a directory
     {
-        const zig_exe_link = comptime "scratch" ++ sep ++ "bin" ++ sep ++ "zig" ++ builtin.target.exeFileExt();
+        const zig_exe_link = try std.fs.path.join(allocator, &.{ bin_dir, "zig" ++ comptime builtin.target.exeFileExt() });
+        defer allocator.free(zig_exe_link);
 
         if (std.fs.cwd().access(zig_exe_link, .{})) {
             try std.fs.cwd().deleteFile(zig_exe_link);
@@ -237,7 +261,7 @@ pub fn main() !u8 {
     try testing.expectEqual(@as(u32, 3), try getCompilerCount(install_dir));
 
     // Just make a directory to trick zigup into thinking there is another compiler so we don't have to wait for it to download/install
-    try std.fs.cwd().makeDir(install_dir ++ sep ++ "0.9.0");
+    try makeDir(test_dir, install_sub_path ++ sep ++ "0.9.0");
     try testing.expectEqual(@as(u32, 4), try getCompilerCount(install_dir));
     try runNoCapture(zigup_args ++ &[_][]const u8{"clean"});
     try testing.expectEqual(@as(u32, 3), try getCompilerCount(install_dir));
@@ -281,20 +305,24 @@ pub fn main() !u8 {
 
     // verify that we get an error if there is another compiler in the path
     {
-        const bin2_dir = "scratch" ++ sep ++ "bin2";
+        const bin2_dir = try std.fs.path.join(allocator, &.{ test_dir, "bin2" });
+        defer allocator.free(bin2_dir);
         try std.fs.cwd().makeDir(bin2_dir);
 
         const previous_path = path_env_ptr.*;
-        const scratch_bin2_path = try std.fs.path.join(allocator, &.{ cwd, bin2_dir });
-        defer allocator.free(scratch_bin2_path);
 
         {
-            var file = try std.fs.cwd().createFile(comptime bin2_dir ++ sep ++ "zig" ++ builtin.target.exeFileExt(), .{});
+            const fake_zig = try std.fs.path.join(allocator, &.{
+                bin2_dir,
+                "zig" ++ comptime builtin.target.exeFileExt()
+            });
+            defer allocator.free(fake_zig);
+            var file = try std.fs.cwd().createFile(fake_zig, .{});
             defer file.close();
             try file.writer().writeAll("a fake executable");
         }
 
-        setPathEnv(try std.mem.concat(allocator, u8, &.{ scratch_bin2_path, path_env_sep, previous_path }));
+        setPathEnv(try std.mem.concat(allocator, u8, &.{ bin2_dir, path_env_sep, previous_path }));
         defer setPathEnv(previous_path);
 
         // verify zig isn't currently on 0.7.0 before we set it as the default
@@ -324,6 +352,12 @@ pub fn main() !u8 {
 
     std.log.info("Success", .{});
     return 0;
+}
+
+fn makeDir(dir_path: []const u8, sub_path: []const u8) !void {
+    var dir = try std.fs.cwd().openDir(dir_path, .{});
+    defer dir.close();
+    try dir.makeDir(sub_path);
 }
 
 fn checkZigVersion(allocator: std.mem.Allocator, zig: []const u8, compare: []const u8, want_equal: enum { not_equal, equal }) !void {
