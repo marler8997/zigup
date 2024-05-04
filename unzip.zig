@@ -10,7 +10,7 @@ fn fatal(comptime fmt: []const u8, args: anytype) noreturn {
 }
 
 fn usage() noreturn {
-    std.log.err("Usage: unzip [-d DIR] ZIP_FILE", .{});
+    std.io.getStdErr().writer().print("Usage: unzip [-d DIR] ZIP_FILE\n", .{}) catch |e| @panic(@errorName(e));
     std.process.exit(1);
 }
 
@@ -78,7 +78,7 @@ pub fn main() !void {
     const zip_file = std.fs.cwd().openFile(zip_file_arg, .{}) catch |err|
         fatal("open '{s}' failed: {s}", .{zip_file_arg, @errorName(err)});
     defer zip_file.close();
-    try @import("zip.zig").extract(out_dir, zip_file.seekableStream(), .{
+    try @import("lib/zip.zig").extract(out_dir, zip_file.seekableStream(), .{
         .allow_backslashes = true,
     });
 }

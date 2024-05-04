@@ -69,6 +69,16 @@ pub fn build(b: *std.Build) !void {
         const install = b.addInstallArtifact(unzip, .{});
         b.step("unzip", "Build/install the unzip cmdline tool").dependOn(&install.step);
     }
+    {
+        const zip = b.addExecutable(.{
+            .name = "zip",
+            .root_source_file = b.path("zip.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        const install = b.addInstallArtifact(zip, .{});
+        b.step("zip", "Build/install the zip cmdline tool").dependOn(&install.step);
+    }
 }
 
 fn addTest(
