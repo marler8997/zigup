@@ -123,6 +123,10 @@ fn ci(
         "x86_64-windows",
         "aarch64-linux",
         "aarch64-macos",
+        "arm-linux",
+        "riscv64-linux",
+        "powerpc-linux",
+        "powerpc64le-linux",
     };
 
     const make_archive_step = b.step("archive", "Create CI archives");
