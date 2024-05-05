@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html><head>
+<title>Zigup</title>
+<style>
+
+* { margin:0; padding:0; }
+body {
+    margin-top:30px;
+    font-family: courier;
+    text-align:center;
+    background:#333;
+    color:#ccc;
+}
+a { color: #eee }
+h1 { color:#eee }
+h2 { color:#eee }
+pre { font-family: courier new }
+
+#InstallDiv {
+    margin:10px;
+}
+
+.CopyButton {
+    padding:5px;
+}
+
+.FilterButton {
+  display:inline-block;
+  width: 60px;
+  height: 15px;
+  line-height: 15px;
+  text-align:center;
+  padding: 10px;
+  border-radius: 2px;
+  border: 0;
+  background:#ccc;
+  font-size: 15px;
+  color: #000;
+  cursor:default;
+  user-select:none;
+  font-weight:bold;
+}
+.FilterButton:hover {
+  background:#aaa;
+}
+.FilterButtonEnabled {
+  background:#4287f5;
+}
+.FilterButtonEnabled:hover {
+  background:#3277e5;
+}
+</style>
+<script>
+
+const version = "v2024_05_05";
+function get(id) { return document.getElementById(id); }
+
+
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text)
+    .then(() => {
+      console.log('Text copied to clipboard');
+    })
+    .catch(err => {
+      console.error('Could not copy text: ', err);
+    });
+}
+
+  function copyCommand(id) {
+      pre = get('command' + id);
+      copyToClipboard(pre.innerHTML)
+  }
+
+  function generateCommandHtml(ids, cmd) {
+      const id = ids.next_id;
+      ids.next_id++;
+      return (
+          '<div>' +
+              '<button class="CopyButton" onclick="copyCommand(' + id + ')">Copy</button> ' +
+              '<pre style="display:inline-block" id="command' + id + '">' + cmd + '</pre>' +
+          '</div>'
+      );
+  }
+
+  function updateButton(button, enable) {
+      if (enable) {
+          button.classList.add("FilterButtonEnabled");
+      } else {
+          button.classList.remove("FilterButtonEnabled");
+      }
+  }
+
+  function toggleOs(os) {
+      if (current_os == os) {
+          current_os = -1;
+      } else {
+          current_os = os;
+      }
+      updateButton(get("ButtonLinux"), current_os == OS_LINUX);
+      updateButton(get("ButtonMacos"), current_os == OS_MACOS);
+      updateButton(get("ButtonWindows"), current_os == OS_WINDOWS);
+      updateInstallDiv();
+  }
+  function toggleArch(arch) {
+      if (current_arch == arch) {
+          current_arch = -1;
+      } else {
+          current_arch = arch;
+      }
+      updateButton(get("ButtonX86_64"), current_arch == ARCH_X86_64);
+      updateButton(get("ButtonAArch64"), current_arch == ARCH_AARCH64);
+      updateInstallDiv();
+  }
+
+  const OS_LINUX = 0;
+  const OS_MACOS = 1;
+  const OS_WINDOWS = 2;
+  const ARCH_X86_64 = 0;
+  const ARCH_AARCH64 = 1;
+
+  var current_os = -1;
+  var current_arch = -1;
+  var include_curl = true;
+  var include_wget = true;
+
+  function updateInstallDiv() {
+      var arch_os = null;
+      var archive_ext = null;
+      if (current_os == OS_LINUX) {
+          archive_ext = ".tar.gz";
+          if (current_arch == ARCH_X86_64) {
+              arch_os = "x86_64-linux";
+          } else if (current_arch == ARCH_AARCH64) {
+              arch_os = "aarch64-linux";
+          }
+      } else if (current_os == OS_MACOS) {
+          archive_ext = ".tar.gz";
+          if (current_arch == ARCH_X86_64) {
+              arch_os = "x86_64-macos";
+          } else if (current_arch == ARCH_AARCH64) {
+              arch_os = "aarch64-macos";
+          }
+      } else if (current_os == OS_WINDOWS) {
+          archive_ext = ".zip";
+          if (current_arch == ARCH_X86_64) {
+              arch_os = "x86_64-windows";
+          }
+      }
+
+      html = '';
+
+      if (arch_os != null) {
+          const basename = 'zigup-' + arch_os + archive_ext;
+          const archive_url = 'https://github.com/marler8997/zigup/releases/download/' + version + '/' + basename;
+          html += '<br/><h2 style="margin:15px"><a href="' + archive_url + '">' + basename + '</a></h2>';
+
+          html += '<br/><h2>Command Line Install:</h2>';
+          var ids = { next_id: 0 };
+          if (include_curl) {
+              html += generateCommandHtml(ids, 'curl -L ' + archive_url + ' | tar xz');
+          }
+          if (include_wget) {
+              html += generateCommandHtml(ids, 'wget -O - ' + archive_url + ' | tar xz');
+          }
+      }
+      get('InstallDiv').innerHTML = html;
+  }
+
+  function bodyOnload() {
+      get("VersionDiv").innerHTML = version;
+      updateInstallDiv()
+
+      let userAgent = window.navigator.userAgent;
+      console.log("userAgent '" + userAgent + "'");
+      if (userAgent.indexOf("Linux") != -1) toggleOs(OS_LINUX);
+      if (userAgent.indexOf("MacOS") != -1) toggleOs(OS_MACOS);
+      if (userAgent.indexOf("Win") != -1) toggleOs(OS_WINDOWS);
+
+      if (userAgent.indexOf("x64") != -1) toggleArch(ARCH_X86_64);
+  }
+
+</script>
+</head><body onload="bodyOnload()">
+
+<h1>Install Zigup</h1>
+<div id="VersionDiv"></div>
+<div style="margin:10px">
+  <span id="ButtonLinux" class="FilterButton" onclick="toggleOs(OS_LINUX)">Linux</span>
+  <span id="ButtonMacos" class="FilterButton" onclick="toggleOs(OS_MACOS)">macOS</span>
+  <span id="ButtonWindows" class="FilterButton" onclick="toggleOs(OS_WINDOWS)">Windows</span>
+</div>
+<div style="margin:10px">
+  <span id="ButtonX86_64" class="FilterButton" onclick="toggleArch(ARCH_X86_64)">x86_64</span>
+  <span id="ButtonAArch64" class="FilterButton" onclick="toggleArch(ARCH_AARCH64)">aarch64</span>
+</div>
+<div id="InstallDiv"></div>
+
+
+</html>
