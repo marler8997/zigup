@@ -2,6 +2,21 @@
 
 Download and manage zig compilers.
 
+# How to Install
+
+Download and extract the applicable archive from [Releases](https://github.com/marler8997/zigup/releases). It will contain a single static binary named `zigup`, unless you're on Windows in which case it's 2 files, `zigup.exe` and `zigup.pdb`.
+
+Here are some options to do this from the command-line:
+```sh
+curl -L https://github.com/marler8997/zigup/releases/download/VERSION/zigup-ARCH-OS.tar.gz | tar xz
+
+# for example:
+curl -L https://github.com/marler8997/zigup/releases/download/v2024_05_05/zigup-x86_64-linux.tar.gz | tar xz
+
+wget -O - https://github.com/marler8997/zigup/releases/download/VERSION/zigup-ARCH-OS.tar.gz | tar xz
+```
+
+
 # Usage
 
 ```
