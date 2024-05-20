@@ -2,7 +2,6 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 pub fn build(b: *std.Build) !void {
-
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -23,7 +22,7 @@ pub fn build(b: *std.Build) !void {
     {
         const exe = b.addExecutable(.{
             .name = "test",
-            .root_source_file = .{ .path = "test.zig" },
+            .root_source_file = b.path("test.zig"),
             .target = target,
             .optimize = optimize,
         });
@@ -87,7 +86,7 @@ fn addZigupExe(
         if (target.result.os.tag == .windows) {
             const exe = b.addExecutable(.{
                 .name = "win32exelink",
-                .root_source_file = .{ .path = "win32exelink.zig" },
+                .root_source_file = b.path("win32exelink.zig"),
                 .target = target,
                 .optimize = optimize,
             });
@@ -100,7 +99,7 @@ fn addZigupExe(
 
     const exe = b.addExecutable(.{
         .name = "zigup",
-        .root_source_file = .{ .path = "zigup.zig" },
+        .root_source_file = b.path("zigup.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -117,7 +116,7 @@ fn ci(
     test_step: *std.Build.Step,
     host_zip_exe: *std.Build.Step.Compile,
 ) !void {
-    const ci_targets = [_][]const u8 {
+    const ci_targets = [_][]const u8{
         "x86_64-linux",
         "x86_64-macos",
         "x86_64-windows",
@@ -140,8 +139,7 @@ fn ci(
         ));
         const optimize: std.builtin.OptimizeMode =
             // Compile in ReleaseSafe on Windows for faster extraction
-                if (target.result.os.tag == .windows) .ReleaseSafe
-            else .Debug;
+            if (target.result.os.tag == .windows) .ReleaseSafe else .Debug;
         const zigup_exe = addZigupExe(b, target, optimize);
         const zigup_exe_install = b.addInstallArtifact(zigup_exe, .{
             .dest_dir = .{ .override = .{ .custom = ci_target_str } },
@@ -150,7 +148,7 @@ fn ci(
 
         const test_exe = b.addExecutable(.{
             .name = b.fmt("test-{s}", .{ci_target_str}),
-            .root_source_file = .{ .path = "test.zig" },
+            .root_source_file = b.path("test.zig"),
             .target = target,
             .optimize = optimize,
         });
@@ -172,9 +170,7 @@ fn ci(
         }
 
         if (builtin.os.tag == .linux) {
-            make_archive_step.dependOn(makeCiArchiveStep(
-                b, ci_target_str, target.result, zigup_exe_install, host_zip_exe
-            ));
+            make_archive_step.dependOn(makeCiArchiveStep(b, ci_target_str, target.result, zigup_exe_install, host_zip_exe));
         }
     }
 }
@@ -197,10 +193,10 @@ fn makeCiArchiveStep(
         zip.addArg(out_zip_file);
         zip.addArg("zigup.exe");
         zip.addArg("zigup.pdb");
-        zip.cwd = .{ .path = b.getInstallPath(
+        zip.cwd = .{ .cwd_relative = b.getInstallPath(
             exe_install.dest_dir.?,
             ".",
-        )};
+        ) };
         zip.step.dependOn(&exe_install.step);
         return &zip.step;
     }
@@ -215,10 +211,10 @@ fn makeCiArchiveStep(
         targz,
         "zigup",
     });
-    tar.cwd = .{ .path = b.getInstallPath(
+    tar.cwd = .{ .cwd_relative = b.getInstallPath(
         exe_install.dest_dir.?,
         ".",
-    )};
+    ) };
     tar.step.dependOn(&exe_install.step);
     return &tar.step;
 }
