@@ -387,7 +387,7 @@ pub fn runCompiler(allocator: Allocator, args: []const []const u8) !u8 {
     try argv.appendSlice(args[1..]);
 
     // TODO: use "execve" if on linux
-    var proc = std.ChildProcess.init(argv.items, allocator);
+    var proc = std.process.Child.init(argv.items, allocator);
     const ret_val = try proc.spawnAndWait();
     switch (ret_val) {
         .Exited => |code| return code,
@@ -1038,9 +1038,9 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
     try loggyRenameAbsolute(installing_dir, compiler_dir);
 }
 
-pub fn run(allocator: Allocator, argv: []const []const u8) !std.ChildProcess.Term {
+pub fn run(allocator: Allocator, argv: []const []const u8) !std.process.Child.Term {
     try logRun(allocator, argv);
-    var proc = std.ChildProcess.init(argv, allocator);
+    var proc = std.process.Child.init(argv, allocator);
     return proc.spawnAndWait();
 }
 
