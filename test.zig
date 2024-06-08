@@ -348,7 +348,7 @@ pub fn main() !u8 {
     // NOTE: this test will eventually break when these builds are cleaned up,
     //       we should support downloading from bazel and use that instead since
     //       it should be more permanent
-    try runNoCapture(zigup_args ++ &[_][]const u8{ "0.12.0-dev.3639+9cfac4718" });
+    try runNoCapture(zigup_args ++ &[_][]const u8{ "0.14.0-dev.14+ec337051a" });
 
     std.log.info("Success", .{});
     return 0;
@@ -404,7 +404,7 @@ fn trailNl(s: []const u8) []const u8 {
     return if (s.len == 0 or s[s.len - 1] != '\n') "\n" else "";
 }
 
-fn dumpExecResult(result: std.ChildProcess.RunResult) void {
+fn dumpExecResult(result: std.process.Child.RunResult) void {
     if (result.stdout.len > 0) {
         std.debug.print("--- STDOUT ---\n{s}{s}--------------\n", .{ result.stdout, trailNl(result.stdout) });
     }
@@ -420,28 +420,28 @@ fn runNoCapture(argv: []const []const u8) !void {
     dumpExecResult(result);
     try passOrThrow(result.term);
 }
-fn runCaptureOuts(allocator: std.mem.Allocator, argv: []const []const u8) !std.ChildProcess.RunResult {
+fn runCaptureOuts(allocator: std.mem.Allocator, argv: []const []const u8) !std.process.Child.RunResult {
     {
         const cmd = try std.mem.join(allocator, " ", argv);
         defer allocator.free(cmd);
         std.log.info("RUN: {s}", .{cmd});
     }
-    return try std.ChildProcess.run(.{ .allocator = allocator, .argv = argv, .env_map = &child_env_map });
+    return try std.process.Child.run(.{ .allocator = allocator, .argv = argv, .env_map = &child_env_map });
 }
-fn passOrThrow(term: std.ChildProcess.Term) error{ChildProcessFailed}!void {
+fn passOrThrow(term: std.process.Child.Term) error{ChildProcessFailed}!void {
     if (!execResultPassed(term)) {
         std.log.err("child process failed with {}", .{term});
         return error.ChildProcessFailed;
     }
 }
-fn passOrDumpAndThrow(result: std.ChildProcess.RunResult) error{ChildProcessFailed}!void {
+fn passOrDumpAndThrow(result: std.process.Child.RunResult) error{ChildProcessFailed}!void {
     if (!execResultPassed(result.term)) {
         dumpExecResult(result);
         std.log.err("child process failed with {}", .{result.term});
         return error.ChildProcessFailed;
     }
 }
-fn execResultPassed(term: std.ChildProcess.Term) bool {
+fn execResultPassed(term: std.process.Child.Term) bool {
     switch (term) {
         .Exited => |code| return code == 0,
         else => return false,
