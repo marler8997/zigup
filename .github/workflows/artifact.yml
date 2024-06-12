@@ -10,7 +10,7 @@ jobs:
     runs-on: ${{matrix.os}}
     steps:
       - uses: actions/checkout@v4
-      - uses: goto-bus-stop/setup-zig@v2
+      - uses: marler8997/mlugg-setup-zig@perfLog
         with:
           version: 0.13.0
       - run: |
