@@ -1,6 +1,5 @@
 const builtin = @import("builtin");
 const std = @import("std");
-const zip = @import("lib/zip.zig");
 
 fn oom(e: error{OutOfMemory}) noreturn {
     @panic(@errorName(e));
@@ -109,8 +108,8 @@ pub fn main() !void {
         defer zip_file.close();
         for (file_entries.items, 0..) |file, i| {
             try zip_file.seekTo(store[i].file_offset);
-            const hdr: zip.LocalFileHeader = .{
-                .signature = zip.local_file_header_sig,
+            const hdr: std.zip.LocalFileHeader = .{
+                .signature = std.zip.local_file_header_sig,
                 .version_needed_to_extract = 10,
                 .flags = .{ .encrypted = false, ._ = 0 },
                 .compression_method = store[i].compression,
@@ -141,7 +140,7 @@ fn writeZip(
     for (file_entries, 0..) |file_entry, i| {
         const file_offset = zipper.counting_writer.bytes_written;
 
-        const compression: zip.CompressionMethod = .deflate;
+        const compression: std.zip.CompressionMethod = .deflate;
 
         try zipper.writeFileHeader(file_entry.path, compression);
 
@@ -242,7 +241,7 @@ fn isBadFilename(filename: []const u8) bool {
 // when writing the corresponding central directory record.
 pub const FileStore = struct {
     file_offset: u64,
-    compression: zip.CompressionMethod,
+    compression: std.zip.CompressionMethod,
     uncompressed_size: u32,
     crc32: u32,
     compressed_size: u32,
@@ -264,11 +263,11 @@ fn Zipper(comptime Writer: type) type {
         pub fn writeFileHeader(
             self: *Self,
             name: []const u8,
-            compression: zip.CompressionMethod,
+            compression: std.zip.CompressionMethod,
         ) !void {
             const writer = self.counting_writer.writer();
-            const hdr: zip.LocalFileHeader = .{
-                .signature = zip.local_file_header_sig,
+            const hdr: std.zip.LocalFileHeader = .{
+                .signature = std.zip.local_file_header_sig,
                 .version_needed_to_extract = 10,
                 .flags = .{ .encrypted = false, ._ = 0 },
                 .compression_method = compression,
@@ -297,8 +296,8 @@ fn Zipper(comptime Writer: type) type {
             }
             self.central_count += 1;
 
-            const hdr: zip.CentralDirectoryFileHeader = .{
-                .signature = zip.central_file_header_sig,
+            const hdr: std.zip.CentralDirectoryFileHeader = .{
+                .signature = std.zip.central_file_header_sig,
                 .version_made_by = 0,
                 .version_needed_to_extract = opt.version_needed_to_extract,
                 .flags = .{ .encrypted = false, ._ = 0 },
@@ -324,8 +323,8 @@ fn Zipper(comptime Writer: type) type {
         pub fn writeEndRecord(self: *Self) !void {
             const cd_offset = self.first_central_offset orelse 0;
             const cd_end = self.last_central_limit orelse 0;
-            const hdr: zip.EndRecord = .{
-                .signature = zip.end_record_sig,
+            const hdr: std.zip.EndRecord = .{
+                .signature = std.zip.end_record_sig,
                 .disk_number = 0,
                 .central_directory_disk_number = 0,
                 .record_count_disk = @intCast(self.central_count),

@@ -78,7 +78,7 @@ pub fn main() !void {
     const zip_file = std.fs.cwd().openFile(zip_file_arg, .{}) catch |err|
         fatal("open '{s}' failed: {s}", .{zip_file_arg, @errorName(err)});
     defer zip_file.close();
-    try @import("lib/zip.zig").extract(out_dir, zip_file.seekableStream(), .{
+    try std.zip.extract(out_dir, zip_file.seekableStream(), .{
         .allow_backslashes = true,
     });
 }

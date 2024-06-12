@@ -11,6 +11,5 @@
         "test.zig",
         "win32exelink.zig",
         "zigup.zig",
-        "zip.zig",
     },
 }
