@@ -1,4 +1,4 @@
-# zigup
+ # zigup
 
 Download and manage zig compilers.
 
