@@ -1,6 +1,13 @@
 .{
     .name = "zigup",
     .version = "0.0.1",
+    .dependencies = .{
+        .known_folders = .{
+            .url = "https://github.com/ziglibs/known-folders/archive/47076c6b11214a218e9244471d8762310820911a.tar.gz",
+            .hash = "12209d2738a2e1dbd3781c2e5f01a2ea877dcfeea53efdfa1913247297d328e6b207",
+            .lazy = true,
+        },
+    },
 
     .paths = .{
         "LICENSE",

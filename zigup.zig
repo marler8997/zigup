@@ -2,6 +2,9 @@ const std = @import("std");
 const builtin = @import("builtin");
 const mem = std.mem;
 
+const build_options = @import("build-options");
+const known_folders = @import("known-folders");
+
 const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
 
@@ -126,19 +129,28 @@ fn getHomeDir() ![]const u8 {
 }
 
 fn allocInstallDirString(allocator: Allocator) ![]const u8 {
+    if (build_options.use_known_folders) {
+        if (try known_folders.getPath(allocator, .data)) |path| {
+            defer allocator.free(path);
+            return std.fs.path.join(allocator, &.{ path, "zigup" });
+        } else {
+            std.log.err("Could not find install directory", .{});
+            return error.AlreadyReported;
+        }
+    }
     // TODO: maybe support ZIG_INSTALL_DIR environment variable?
     // TODO: maybe support a file on the filesystem to configure install dir?
     if (builtin.os.tag == .windows) {
         const self_exe_dir = try std.fs.selfExeDirPathAlloc(allocator);
         defer allocator.free(self_exe_dir);
-        return std.fs.path.join(allocator, &.{ self_exe_dir, "zig" });
+        return std.fs.path.join(allocator, &.{ self_exe_dir, build_options.default_dir });
     }
     const home = try getHomeDir();
     if (!std.fs.path.isAbsolute(home)) {
         std.log.err("$HOME environment variable '{s}' is not an absolute path", .{home});
         return error.BadHomeEnvironmentVariable;
     }
-    return std.fs.path.join(allocator, &[_][]const u8{ home, "zig" });
+    return std.fs.path.join(allocator, &[_][]const u8{ home, build_options.default_dir });
 }
 const GetInstallDirOptions = struct {
     create: bool,

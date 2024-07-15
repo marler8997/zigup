@@ -5,8 +5,27 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const default_dir = b.option(
+        []const u8,
+        "default-dir",
+        "Use a static default install directory",
+    );
+
+    const build_options = b.addOptions();
+    build_options.addOption(bool, "use_known_folders", default_dir == null);
+    if (default_dir) |dir| {
+        build_options.addOption([]const u8, "default_dir", dir);
+    }
+
+    const known_folders = if (default_dir != null)
+        null
+    else if (b.lazyDependency("known_folders", .{})) |pkg|
+        pkg.module("known-folders")
+    else
+        null;
+
     const zigup_exe_native = blk: {
-        const exe = addZigupExe(b, target, optimize);
+        const exe = addZigupExe(b, target, optimize, build_options, known_folders);
         b.installArtifact(exe);
         const run_cmd = b.addRunArtifact(exe);
         run_cmd.step.dependOn(b.getInstallStep());
@@ -74,13 +93,15 @@ pub fn build(b: *std.Build) !void {
     ci_step.dependOn(test_step);
     ci_step.dependOn(unzip_step);
     ci_step.dependOn(zip_step);
-    try ci(b, ci_step, test_step, host_zip_exe);
+    try ci(b, ci_step, test_step, host_zip_exe, build_options, known_folders);
 }
 
 fn addZigupExe(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.Mode,
+    build_options: *std.Build.Step.Options,
+    known_folders: ?*std.Build.Module,
 ) *std.Build.Step.Compile {
     const win32exelink_mod: ?*std.Build.Module = blk: {
         if (target.result.os.tag == .windows) {
@@ -104,6 +125,12 @@ fn addZigupExe(
         .optimize = optimize,
     });
 
+    exe.root_module.addOptions("build-options", build_options);
+
+    if (known_folders) |mod| {
+        exe.root_module.addImport("known-folders", mod);
+    }
+
     if (target.result.os.tag == .windows) {
         exe.root_module.addImport("win32exelink", win32exelink_mod.?);
     }
@@ -115,6 +142,8 @@ fn ci(
     ci_step: *std.Build.Step,
     test_step: *std.Build.Step,
     host_zip_exe: *std.Build.Step.Compile,
+    build_options: *std.Build.Step.Options,
+    known_folders: ?*std.Build.Module,
 ) !void {
     const ci_targets = [_][]const u8{
         "x86_64-linux",
@@ -140,7 +169,7 @@ fn ci(
         const optimize: std.builtin.OptimizeMode =
             // Compile in ReleaseSafe on Windows for faster extraction
             if (target.result.os.tag == .windows) .ReleaseSafe else .Debug;
-        const zigup_exe = addZigupExe(b, target, optimize);
+        const zigup_exe = addZigupExe(b, target, optimize, build_options, known_folders);
         const zigup_exe_install = b.addInstallArtifact(zigup_exe, .{
             .dest_dir = .{ .override = .{ .custom = ci_target_str } },
         });
