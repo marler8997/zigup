@@ -134,7 +134,7 @@ fn ci(
     var previous_test_step = test_step;
 
     for (ci_targets) |ci_target_str| {
-        const target = b.resolveTargetQuery(try std.zig.CrossTarget.parse(
+        const target = b.resolveTargetQuery(try std.Target.Query.parse(
             .{ .arch_os_abi = ci_target_str },
         ));
         const optimize: std.builtin.OptimizeMode =

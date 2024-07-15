@@ -501,7 +501,7 @@ pub fn loggySymlinkAbsolute(target_path: []const u8, sym_link_path: []const u8, 
 
 /// returns: true if the symlink was updated, false if it was already set to the given `target_path`
 pub fn loggyUpdateSymlink(target_path: []const u8, sym_link_path: []const u8, flags: std.fs.Dir.SymLinkFlags) !bool {
-    var current_target_path_buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var current_target_path_buffer: [std.fs.max_path_bytes]u8 = undefined;
     if (std.fs.readLinkAbsolute(sym_link_path, &current_target_path_buffer)) |current_target_path| {
         if (std.mem.eql(u8, target_path, current_target_path)) {
             loginfo("symlink '{s}' already points to '{s}'", .{ sym_link_path, target_path });
@@ -631,7 +631,7 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
         }
     }
 }
-fn readDefaultCompiler(allocator: Allocator, buffer: *[std.fs.MAX_PATH_BYTES + 1]u8) !?[]const u8 {
+fn readDefaultCompiler(allocator: Allocator, buffer: *[std.fs.max_path_bytes + 1]u8) !?[]const u8 {
     const path_link = try makeZigPathLinkString(allocator);
     defer allocator.free(path_link);
 
@@ -651,7 +651,7 @@ fn readDefaultCompiler(allocator: Allocator, buffer: *[std.fs.MAX_PATH_BYTES + 1
         return try allocator.dupe(u8, targetPathToVersion(target_exe));
     }
 
-    const target_path = std.fs.readLinkAbsolute(path_link, buffer[0..std.fs.MAX_PATH_BYTES]) catch |e| switch (e) {
+    const target_path = std.fs.readLinkAbsolute(path_link, buffer[0..std.fs.max_path_bytes]) catch |e| switch (e) {
         error.FileNotFound => return null,
         else => return e,
     };
@@ -662,7 +662,7 @@ fn targetPathToVersion(target_path: []const u8) []const u8 {
     return std.fs.path.basename(std.fs.path.dirname(std.fs.path.dirname(target_path).?).?);
 }
 
-fn readMasterDir(buffer: *[std.fs.MAX_PATH_BYTES]u8, install_dir: *std.fs.Dir) !?[]const u8 {
+fn readMasterDir(buffer: *[std.fs.max_path_bytes]u8, install_dir: *std.fs.Dir) !?[]const u8 {
     if (builtin.os.tag == .windows) {
         var file = install_dir.openFile("master", .{}) catch |e| switch (e) {
             error.FileNotFound => return null,
@@ -678,7 +678,7 @@ fn readMasterDir(buffer: *[std.fs.MAX_PATH_BYTES]u8, install_dir: *std.fs.Dir) !
 }
 
 fn getDefaultCompiler(allocator: Allocator) !?[]const u8 {
-    var buffer: [std.fs.MAX_PATH_BYTES + 1]u8 = undefined;
+    var buffer: [std.fs.max_path_bytes + 1]u8 = undefined;
     const slice_path = (try readDefaultCompiler(allocator, &buffer)) orelse return null;
     const path_to_return = try allocator.alloc(u8, slice_path.len);
     @memcpy(path_to_return, slice_path);
@@ -686,7 +686,7 @@ fn getDefaultCompiler(allocator: Allocator) !?[]const u8 {
 }
 
 fn getMasterDir(allocator: Allocator, install_dir: *std.fs.Dir) !?[]const u8 {
-    var buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    var buffer: [std.fs.max_path_bytes]u8 = undefined;
     const slice_path = (try readMasterDir(&buffer, install_dir)) orelse return null;
     const path_to_return = try allocator.alloc(u8, slice_path.len);
     @memcpy(path_to_return, slice_path);
@@ -773,7 +773,7 @@ fn verifyPathLink(allocator: Allocator, path_link: []const u8) !void {
             break :blk "";
         };
 
-        var path_it = std.mem.tokenize(u8, path_env, ";");
+        var path_it = std.mem.tokenizeScalar(u8, path_env, ';');
         while (path_it.next()) |path| {
             switch (try compareDir(path_link_dir_id, path)) {
                 .missing => continue,
@@ -789,7 +789,7 @@ fn verifyPathLink(allocator: Allocator, path_link: []const u8) !void {
                 try enforceNoZig(path_link, exe);
             }
 
-            var ext_it = std.mem.tokenize(u8, pathext_env, ";");
+            var ext_it = std.mem.tokenizeScalar(u8, pathext_env, ';');
             while (ext_it.next()) |ext| {
                 if (ext.len == 0) continue;
                 const basename = try std.mem.concat(allocator, u8, &.{ "zig", ext });
@@ -802,7 +802,7 @@ fn verifyPathLink(allocator: Allocator, path_link: []const u8) !void {
             }
         }
     } else {
-        var path_it = std.mem.tokenize(u8, std.posix.getenv("PATH") orelse "", ":");
+        var path_it = std.mem.tokenizeScalar(u8, std.posix.getenv("PATH") orelse "", ':');
         while (path_it.next()) |path| {
             switch (try compareDir(path_link_dir_id, path)) {
                 .missing => continue,
@@ -924,8 +924,8 @@ const win32exelink = struct {
     };
 };
 fn createExeLink(link_target: []const u8, path_link: []const u8) !void {
-    if (path_link.len > std.fs.MAX_PATH_BYTES) {
-        std.debug.print("Error: path_link (size {}) is too large (max {})\n", .{ path_link.len, std.fs.MAX_PATH_BYTES });
+    if (path_link.len > std.fs.max_path_bytes) {
+        std.debug.print("Error: path_link (size {}) is too large (max {})\n", .{ path_link.len, std.fs.max_path_bytes });
         return error.AlreadyReported;
     }
     const file = std.fs.cwd().createFile(path_link, .{}) catch |err| switch (err) {
