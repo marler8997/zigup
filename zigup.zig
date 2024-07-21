@@ -120,27 +120,43 @@ fn ignoreHttpCallback(request: []const u8) void {
     _ = request;
 }
 
-fn getHomeDir() ![]const u8 {
-    return std.posix.getenv("HOME") orelse {
-        std.log.err("cannot find install directory, $HOME environment variable is not set", .{});
-        return error.MissingHomeEnvironmentVariable;
-    };
-}
-
 fn allocInstallDirString(allocator: Allocator) ![]const u8 {
     // TODO: maybe support ZIG_INSTALL_DIR environment variable?
     // TODO: maybe support a file on the filesystem to configure install dir?
-    if (builtin.os.tag == .windows) {
-        const self_exe_dir = try std.fs.selfExeDirPathAlloc(allocator);
-        defer allocator.free(self_exe_dir);
-        return std.fs.path.join(allocator, &.{ self_exe_dir, build_options.default_dir });
+
+    if (comptime std.fs.path.isAbsolute(build_options.default_dir)) {
+        // copy wouldn't be needed, but makes calling code simpler
+        return allocator.dupe(u8, build_options.default_dir);
     }
-    const home = try getHomeDir();
-    if (!std.fs.path.isAbsolute(home)) {
-        std.log.err("$HOME environment variable '{s}' is not an absolute path", .{home});
-        return error.BadHomeEnvironmentVariable;
+
+    switch (build_options.install_parent) {
+        .@"exe-dir" => {
+            const self_exe_dir = try std.fs.selfExeDirPathAlloc(allocator);
+            defer allocator.free(self_exe_dir);
+            return std.fs.path.join(allocator, &.{ self_exe_dir, build_options.default_dir });
+        },
+        .home => {
+            const home = switch (builtin.os.tag) {
+                .windows => std.process.getEnvVarOwned(allocator, "HOMEPATH") catch |e| switch (e) {
+                    error.EnvironmentVariableNotFound => {
+                        std.log.err("cannot find isntall directory %HOMEPATH% environment variable is not set", .{});
+                        return error.AlreadyReportedk;
+                    },
+                    else => |err| return err,
+                },
+                else => std.posix.getenv("HOME") orelse {
+                    std.log.err("cannot find install directory, $HOME environment variable is not set", .{});
+                    return error.AlreadyReported;
+                },
+            };
+            const env = if (builtin.os.tag == .windows) "%HOMEPATH%" else "$HOME";
+            if (!std.fs.path.isAbsolute(home)) {
+                std.log.err(env ++ " environment variable '{s}' is not an absolute path", .{home});
+                return error.AlreadyReported;
+            }
+            return std.fs.path.join(allocator, &[_][]const u8{ home, build_options.default_dir });
+        },
     }
-    return std.fs.path.join(allocator, &[_][]const u8{ home, build_options.default_dir });
 }
 const GetInstallDirOptions = struct {
     create: bool,

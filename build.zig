@@ -11,8 +11,23 @@ pub fn build(b: *std.Build) !void {
         "Default compiler installation directory (default: zig)",
     ) orelse "zig";
 
+    const InstallParent = enum { home, @"exe-dir" };
+    const install_parent: ?InstallParent = b.option(
+        InstallParent,
+        "install-parent",
+        "Parent of default installation directory, ignored if '-Ddefault-dir' is an absolute path",
+    ) orelse if (std.fs.path.isAbsolute(default_dir))
+        null
+    else switch (target.result.os.tag) {
+        .windows => .@"exe-dir",
+        else => .home,
+    };
+
     const build_options = b.addOptions();
     build_options.addOption([]const u8, "default_dir", default_dir);
+    if (install_parent) |dir| {
+        build_options.addOption(InstallParent, "install_parent", dir);
+    }
 
     const zigup_exe_native = blk: {
         const exe = addZigupExe(b, target, optimize, build_options);
