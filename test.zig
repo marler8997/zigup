@@ -344,6 +344,82 @@ pub fn main() !u8 {
         try checkZigVersion(allocator, path_link, expected_zig_version_0_7_0, .equal);
     }
 
+        {
+            const orig = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{"list"});
+            defer {
+                allocator.free(orig.stdout);
+                allocator.free(orig.stderr);
+            }
+            dumpExecResult(orig);
+
+            var expected_count = std.mem.count(u8, orig.stdout, "\n");
+
+            var dir = try std.fs.cwd().openDir(install_dir, .{});
+            defer dir.close();
+
+            {
+                // check a broken link is not listed
+                try dir.symLink("doesnotexist", "0.7.0-broken-alias", .{ .is_directory = true });
+                const new = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{"list"});
+                defer {
+                    allocator.free(new.stdout);
+                    allocator.free(new.stderr);
+                }
+                dumpExecResult(new);
+                try testing.expectEqual(expected_count, std.mem.count(u8, new.stdout, "\n"));
+            }
+
+            {
+                // check a link is listed
+                try dir.symLink("0.7.0", "0.7.0-alias", .{ .is_directory = true });
+                const new = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{"list"});
+                defer {
+                    allocator.free(new.stdout);
+                    allocator.free(new.stderr);
+                }
+                dumpExecResult(new);
+                expected_count += 1;
+                try testing.expectEqual(expected_count, std.mem.count(u8, new.stdout, "\n"));
+            }
+            {
+                // check links are followed transitively
+                try dir.symLink("0.7.0-alias", "0.7.0-alias2", .{});
+                const new = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{"list"});
+                defer {
+                    allocator.free(new.stdout);
+                    allocator.free(new.stderr);
+                }
+                dumpExecResult(new);
+                expected_count += 1;
+                try testing.expectEqual(expected_count, std.mem.count(u8, new.stdout, "\n"));
+            }
+            {
+                // check a link to a non-directory is not listed
+                const filename = "just-a-file";
+                const file = try dir.createFile(filename, .{});
+                file.close();
+                try dir.symLink(filename, "file-alias", .{});
+                const new = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{"list"});
+                defer {
+                    allocator.free(new.stdout);
+                    allocator.free(new.stderr);
+                }
+                try testing.expectEqual(expected_count, std.mem.count(u8, new.stdout, "\n"));
+
+                // check transitive version of above
+                try dir.symLink("file-alias", "file-alias2", .{});
+                const new2 = try runCaptureOuts(allocator, zigup_args ++ &[_][]const u8{"list"});
+                defer {
+                    allocator.free(new2.stdout);
+                    allocator.free(new2.stderr);
+                }
+                try testing.expectEqual(expected_count, std.mem.count(u8, new2.stdout, "\n"));
+
+                // cleanup the file for any later calls to getCompilerCount
+                try dir.deleteFile(filename);
+            }
+        }
+
     // verify a dev build
     // NOTE: this test will eventually break when these builds are cleaned up,
     //       we should support downloading from bazel and use that instead since
