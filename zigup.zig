@@ -569,9 +569,22 @@ fn listCompilers(allocator: Allocator) !void {
     {
         var it = install_dir.iterate();
         while (try it.next()) |entry| {
-            if (entry.kind != .directory)
+            var target = entry.name;
+            var link_buffer: [std.fs.max_path_bytes]u8 = undefined;
+            var real_buffer: [std.fs.max_path_bytes]u8 = undefined;
+            if (entry.kind == .sym_link) {
+                const link_path = install_dir.readLink(entry.name, &link_buffer) catch continue;
+                const real_path = install_dir.realpath(link_path, &real_buffer) catch continue;
+                const relative = try std.fs.path.relative(allocator, install_dir_string, real_path);
+                defer allocator.free(relative);
+                if (std.fs.path.isAbsolute(relative) or std.mem.startsWith(u8, relative, "..")) {
+                    continue;
+                }
+                install_dir.access(link_path, .{}) catch continue;
+                target = link_path;
+            } else if (entry.kind != .directory)
                 continue;
-            if (std.mem.endsWith(u8, entry.name, ".installing"))
+            if (std.mem.endsWith(u8, target, ".installing"))
                 continue;
             try stdout.print("{s}\n", .{entry.name});
         }
