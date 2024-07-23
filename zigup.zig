@@ -197,7 +197,7 @@ fn help() void {
         \\
         \\Uncommon Usage:
         \\
-        \\  zigup fetch-index             download and print the download index json
+        \\  zigup fetch-index [SOURCE]    download and print the download index json from ziglang or mach
         \\
         \\Common Options:
         \\  --install-dir DIR             override the default install location
@@ -271,11 +271,31 @@ pub fn main2() !u8 {
         return 1;
     }
     if (std.mem.eql(u8, "fetch-index", args[0])) {
-        if (args.len != 1) {
-            std.log.err("'index' command requires 0 arguments but got {d}", .{args.len - 1});
+        if (args.len > 2) {
+            std.log.err("'index' command accepts at most 1 arguments but got {d}", .{args.len - 1});
             return 1;
         }
-        var download_index = try fetchDownloadIndex(allocator);
+        const index_source: IndexSource = if (args.len == 1)
+            .ziglang
+        else src: {
+            const value_tuple = comptime blk: {
+                const slice = std.enums.values(IndexSource);
+                var result: std.meta.Tuple(&([1]type{[]const u8} ** slice.len)) = undefined;
+                for (&result, slice) |*r, s| r.* = @tagName(s);
+                break :blk result;
+            };
+            const options = std.fmt.comptimePrint("{s}\n{s}", value_tuple);
+
+            break :src std.meta.stringToEnum(IndexSource, args[1]) orelse {
+                std.log.err(
+                    "index source '{s}' is unknown, valid options are:\n" ++ options,
+                    .{args[1]},
+                );
+                return 1;
+            };
+        };
+
+        var download_index = try fetchDownloadIndex(allocator, index_source);
         defer download_index.deinit(allocator);
         try std.io.getStdOut().writeAll(download_index.text);
         return 0;
@@ -413,28 +433,32 @@ fn fetchCompiler(allocator: Allocator, version_arg: []const u8, set_default: Set
     // NOTE: we only fetch the download index if the user wants to download 'master', we can skip
     //       this step for all other versions because the version to URL mapping is fixed (see getDefaultUrl)
     const is_master = std.mem.eql(u8, version_arg, "master");
+    const is_mach = std.mem.indexOf(u8, version_arg, "mach") != null;
     const version_url = blk: {
-        if (!is_master)
+        if (!is_master and !is_mach)
             break :blk VersionUrl{ .version = version_arg, .url = try getDefaultUrl(allocator, version_arg) };
-        optional_download_index = try fetchDownloadIndex(allocator);
-        const master = optional_download_index.?.json.value.object.get("master").?;
-        const compiler_version = master.object.get("version").?.string;
-        const master_linux = master.object.get(json_platform).?;
-        const master_linux_tarball = master_linux.object.get("tarball").?.string;
-        break :blk VersionUrl{ .version = compiler_version, .url = master_linux_tarball };
+
+        const index_source: IndexSource = if (is_mach) .mach else .ziglang;
+        optional_download_index = try fetchDownloadIndex(allocator, index_source);
+
+        const named_version = optional_download_index.?.json.value.object.get(version_arg).?;
+        const compiler_version = named_version.object.get("version").?.string;
+        const platform = named_version.object.get(json_platform).?;
+        const tarball = platform.object.get("tarball").?.string;
+        break :blk VersionUrl{ .version = compiler_version, .url = tarball };
     };
     const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, version_url.version });
     defer allocator.free(compiler_dir);
     try installCompiler(allocator, compiler_dir, version_url.url);
-    if (is_master) {
-        const master_symlink = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, "master" });
-        defer allocator.free(master_symlink);
+    if (is_master or is_mach) {
+        const symlink = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, version_arg });
+        defer allocator.free(symlink);
         if (builtin.os.tag == .windows) {
-            var file = try std.fs.createFileAbsolute(master_symlink, .{});
+            var file = try std.fs.createFileAbsolute(symlink, .{});
             defer file.close();
             try file.writer().writeAll(version_url.version);
         } else {
-            _ = try loggyUpdateSymlink(version_url.version, master_symlink, .{ .is_directory = true });
+            _ = try loggyUpdateSymlink(version_url.version, symlink, .{ .is_directory = true });
         }
     }
     if (set_default == .set_default) {
@@ -442,7 +466,13 @@ fn fetchCompiler(allocator: Allocator, version_arg: []const u8, set_default: Set
     }
 }
 
-const download_index_url = "https://ziglang.org/download/index.json";
+const ziglang_index_url = "https://ziglang.org/download/index.json";
+const mach_index_url = "https://machengine.org/zig/index.json";
+
+const IndexSource = enum {
+    ziglang,
+    mach,
+};
 
 const DownloadIndex = struct {
     text: []u8,
@@ -453,11 +483,15 @@ const DownloadIndex = struct {
     }
 };
 
-fn fetchDownloadIndex(allocator: Allocator) !DownloadIndex {
-    const text = switch (downloadToString(allocator, download_index_url)) {
+fn fetchDownloadIndex(allocator: Allocator, index_source: IndexSource) !DownloadIndex {
+    const index_url = switch (index_source) {
+        .ziglang => ziglang_index_url,
+        .mach => mach_index_url,
+    };
+    const text = switch (downloadToString(allocator, index_url)) {
         .ok => |text| text,
         .err => |err| {
-            std.log.err("download '{s}' failed: {s}", .{download_index_url, err});
+            std.log.err("download '{s}' failed: {s}", .{ index_url, err });
             return error.AlreadyReported;
         },
     };
