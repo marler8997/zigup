@@ -122,6 +122,7 @@ fn ci(
         "x86_64-windows",
         "aarch64-linux",
         "aarch64-macos",
+        "aarch64-windows",
         "arm-linux",
         "riscv64-linux",
         "powerpc-linux",
