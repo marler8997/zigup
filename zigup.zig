@@ -200,10 +200,13 @@ fn help() void {
         \\  zigup fetch-index             download and print the download index json
         \\
         \\Common Options:
-        \\  --install-dir DIR             override the default install location
+        \\  --install-dir DIR             override the default install location, overrides ZIGUP_INSTALL_PATH
         \\  --path-link PATH              path to the `zig` symlink that points to the default compiler
         \\                                this will typically be a file path within a PATH directory so
         \\                                that the user can just run `zig`
+        \\
+        \\Environment Variables:
+        \\  ZIGUP_INSTALL_PATH            override the default install location
         \\
     ) catch unreachable;
 }
@@ -230,6 +233,18 @@ pub fn main2() !u8 {
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     const allocator = arena.allocator();
+
+    const zigup_install_path = std.process.getEnvVarOwned(allocator, "ZIGUP_INSTALL_PATH") catch |err|
+        switch (err) {
+            error.EnvironmentVariableNotFound => null,
+            else => unreachable,
+        };
+    defer if (zigup_install_path) |path| {
+        allocator.free(path);
+    };
+    if (zigup_install_path) |path| {
+        global_optional_install_dir = path;
+    }
 
     const args_array = try std.process.argsAlloc(allocator);
     // no need to free, os will do it
