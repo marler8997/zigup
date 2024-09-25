@@ -556,9 +556,16 @@ fn listCompilers(allocator: Allocator) !void {
     {
         var it = install_dir.iterate();
         while (try it.next()) |entry| {
-            if (entry.kind != .directory)
+            var target = entry.name;
+            var realpath_buffer: [std.fs.max_path_bytes]u8 = undefined;
+            if (entry.kind == .sym_link) {
+                const stat = install_dir.statFile(entry.name) catch continue;
+                if (stat.kind != .directory) continue;
+                const real_path = install_dir.realpath(entry.name, &realpath_buffer) catch continue;
+                target = real_path;
+            } else if (entry.kind != .directory)
                 continue;
-            if (std.mem.endsWith(u8, entry.name, ".installing"))
+            if (std.mem.endsWith(u8, target, ".installing"))
                 continue;
             try stdout.print("{s}\n", .{entry.name});
         }
