@@ -2,6 +2,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const mem = std.mem;
 
+const build_options = @import("build-options");
+
 const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
 
@@ -119,10 +121,15 @@ fn ignoreHttpCallback(request: []const u8) void {
 }
 
 fn getHomeDir() ![]const u8 {
-    return std.posix.getenv("HOME") orelse {
+    const home = std.posix.getenv("HOME") orelse {
         std.log.err("cannot find install directory, $HOME environment variable is not set", .{});
-        return error.MissingHomeEnvironmentVariable;
+        return error.AlreadyReported;
     };
+    if (!std.fs.path.isAbsolute(home)) {
+        std.log.err("$HOME environment variable '{s}' is not an absolute path", .{home});
+        return error.AlreadyReported;
+    }
+    return home;
 }
 
 fn allocInstallDirString(allocator: Allocator) ![]const u8 {
@@ -133,12 +140,28 @@ fn allocInstallDirString(allocator: Allocator) ![]const u8 {
         defer allocator.free(self_exe_dir);
         return std.fs.path.join(allocator, &.{ self_exe_dir, "zig" });
     }
-    const home = try getHomeDir();
-    if (!std.fs.path.isAbsolute(home)) {
-        std.log.err("$HOME environment variable '{s}' is not an absolute path", .{home});
-        return error.BadHomeEnvironmentVariable;
+
+    if (build_options.use_xdg) {
+        if (std.posix.getenv("XDG_DATA_HOME")) |xdg_data_home| {
+            if (xdg_data_home.len > 0) {
+                if (!std.fs.path.isAbsolute(xdg_data_home)) {
+                    std.log.err(
+                        "$XDG_DATA_HOME environment variable '{s}' is not an absolute path",
+                        .{xdg_data_home},
+                    );
+                    return error.AlreadyReported;
+                }
+                return std.fs.path.join(allocator, &.{ xdg_data_home, "zigup" });
+            }
+        }
+        const sep = .{std.fs.path.sep};
+        return std.fs.path.join(allocator, &.{
+            try getHomeDir(), ".local" ++ sep ++ "share" ++ sep ++ "zigup",
+        });
     }
-    return std.fs.path.join(allocator, &[_][]const u8{ home, "zig" });
+    return std.fs.path.join(allocator, &[_][]const u8{
+        try getHomeDir(), "zig",
+    });
 }
 const GetInstallDirOptions = struct {
     create: bool,
