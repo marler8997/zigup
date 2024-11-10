@@ -103,13 +103,6 @@ fn ignoreHttpCallback(request: []const u8) void {
     _ = request;
 }
 
-fn getHomeDir() ![]const u8 {
-    return std.posix.getenv("HOME") orelse {
-        std.log.err("cannot find install directory, $HOME environment variable is not set", .{});
-        return error.MissingHomeEnvironmentVariable;
-    };
-}
-
 fn getInstallDir(create_missing: bool) ![]const u8 {
     const install_dir = std.posix.getenv("ZIGUP_INSTALL_DIR") orelse @panic("$ZIGUP_INSTALL_DIR is not defined.");
 
@@ -677,18 +670,22 @@ fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, verify_exi
         dir.close();
     }
 
-    const path_link = try makeZigPathLinkString(allocator);
-    defer allocator.free(path_link);
+    const link_path = std.posix.getenv("ZIGUP_DIR") orelse @panic("$ZIGUP_DIR not defined");
 
-    const link_target = try std.fs.path.join(allocator, &[_][]const u8{ compiler_dir, "files", comptime "zig" ++ builtin.target.exeFileExt() });
-    defer allocator.free(link_target);
+    loginfo("link path = {s}", .{link_path});
+
+    const target = try std.fs.path.join(allocator, &[_][]const u8{ compiler_dir, "files" });
+    defer allocator.free(target);
+
     if (builtin.os.tag == .windows) {
-        try createExeLink(link_target, path_link);
+        try createExeLink(target, link_path);
     } else {
-        _ = try loggyUpdateSymlink(link_target, path_link, .{});
+        _ = try loggyUpdateSymlink(target, link_path, .{});
     }
 
-    try verifyPathLink(allocator, path_link);
+    // TODO: Keep or remove this?!
+    // FIXME: This is broken
+    //try verifyPathLink(allocator, link_path);
 }
 
 /// Verify that path_link will work.  It verifies that `path_link` is
@@ -742,7 +739,7 @@ fn verifyPathLink(allocator: Allocator, path_link: []const u8) !void {
             {
                 const exe = try std.fs.path.join(allocator, &.{ path, "zig" });
                 defer allocator.free(exe);
-                try enforceNoZig(path_link, exe);
+                // try enforceNoZig(path_link, exe);
             }
 
             var ext_it = std.mem.tokenizeScalar(u8, pathext_env, ';');
@@ -754,7 +751,7 @@ fn verifyPathLink(allocator: Allocator, path_link: []const u8) !void {
                 const exe = try std.fs.path.join(allocator, &.{ path, basename });
                 defer allocator.free(exe);
 
-                try enforceNoZig(path_link, exe);
+                // try enforceNoZig(path_link, exe);
             }
         }
     } else {
@@ -770,7 +767,7 @@ fn verifyPathLink(allocator: Allocator, path_link: []const u8) !void {
             }
             const exe = try std.fs.path.join(allocator, &.{ path, "zig" });
             defer allocator.free(exe);
-            try enforceNoZig(path_link, exe);
+            // try enforceNoZig(path_link, exe);
         }
     }
 
@@ -788,17 +785,17 @@ fn compareDir(dir_id: FileId, other_dir: []const u8) !enum { missing, access_den
     return if (dir_id.eql(try FileId.initFromDir(dir, other_dir))) .match else .mismatch;
 }
 
-fn enforceNoZig(path_link: []const u8, exe: []const u8) !void {
-    var file = std.fs.cwd().openFile(exe, .{}) catch |err| switch (err) {
-        error.FileNotFound, error.IsDir => return,
-        error.AccessDenied => return, // if there is a Zig it must not be accessible
-        else => |e| return e,
-    };
-    defer file.close();
-
-    // todo: on posix systems ignore the file if it is not executable
-    std.log.err("zig compiler '{s}' is higher priority in PATH than the path-link '{s}'", .{ exe, path_link });
-}
+// fn enforceNoZig(path_link: []const u8, exe: []const u8) !void {
+//     var file = std.fs.cwd().openFile(exe, .{}) catch |err| switch (err) {
+//         error.FileNotFound, error.IsDir => return,
+//         error.AccessDenied => return, // if there is a Zig it must not be accessible
+//         else => |e| return e,
+//     };
+//     defer file.close();
+//
+//     // todo: on posix systems ignore the file if it is not executable
+//     std.log.err("zig compiler '{s}' is higher priority in PATH than the path-link '{s}'", .{ exe, path_link });
+// }
 
 const FileId = struct {
     dev: if (builtin.os.tag == .windows) u32 else blk: {
