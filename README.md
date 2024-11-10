@@ -1,6 +1,6 @@
 # zigup
 
-Fork of [https://marler8997.github.io/zigup](zigup) which aims to make it easier to download and manage zig version. This fork is based on how rustup works.
+Fork of [zigup](https://marler8997.github.io/zigup) which aims to make it easier to download and manage zig versions. This fork is based on how [rustup](https://rustup.rs/) works.
 
 # How to Install
 
