@@ -1,6 +1,6 @@
 # zigup
 
-Download and manage zig compilers.
+Fork of [https://marler8997.github.io/zigup](zigup) which aims to make it easier to download and manage zig version. This fork is based on how rustup works.
 
 # How to Install
 
@@ -9,6 +9,17 @@ Go to https://marler8997.github.io/zigup and select your OS/Arch to get a downlo
 Otherwise, you can manually find and download/extract the applicable archive from [Releases](https://github.com/marler8997/zigup/releases). It will contain a single static binary named `zigup`, unless you're on Windows in which case it's 2 files, `zigup.exe` and `zigup.pdb`.
 
 # Usage
+
+```sh
+$ zig version
+0.14.0-dev.2198+e5f5229fd
+$ zigup fetch 0.13.0
+...
+$ zigup default 0.13.0
+...
+$ zig version
+0.13.0
+```
 
 ```
 # fetch a compiler and set it as the default
