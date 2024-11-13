@@ -173,12 +173,115 @@ fn getCmdOpt(args: [][]const u8, i: *usize) ![]const u8 {
     return args[i.*];
 }
 
+pub fn promptUser(msg: []const u8, out: []u8) ![]u8 {
+    try std.io.getStdOut().writeAll(msg);
+
+    return try std.io.getStdIn().reader().readUntilDelimiter(out, '\n');
+}
+
+pub fn promptUserAlloc(allocator: Allocator, msg: []const u8) ![]u8 {
+    try std.io.getStdOut().writeAll(msg);
+
+    return try std.io.getStdIn().reader().readUntilDelimiterAlloc(allocator, '\n', 4096);
+}
+
+pub fn yesOrNoP(comptime msg: []const u8) !bool {
+    const out_msg = msg ++ " [Y/n]";
+
+    var buf: [2]u8 = undefined;
+
+    prompt: while (true) {
+        const ret = promptUser(out_msg, &buf) catch |err| if (err == error.StreamTooLong) {
+            std.debug.print("stream too long", .{});
+            continue :prompt;
+        } else return err;
+
+        // TODO: Make this configurable
+        // User just pressed ret, assume true;
+        if (ret.len == 0) {
+            return true;
+        }
+
+        if (ret[0] == 'y' or ret[0] == 'Y') {
+            return true;
+        } else if (buf[0] == 'n' or buf[0] == 'N') {
+            return false;
+        }
+    }
+}
+
+const ZigupConfig = struct {
+    path: []const u8,
+    install_path: []const u8,
+};
+
+pub fn configure(allocator: Allocator) !void {
+    if (!try yesOrNoP("Could not get config from env, configure zigup?")) {
+        return error.ConfigAborted;
+    }
+
+    const home = std.posix.getenv("HOME") orelse @panic("$HOME is not in env");
+    const default_path = try std.fmt.allocPrint(allocator, "{s}/.zigup", .{home});
+
+    loginfo("default zigup_path = '{s}'", .{default_path});
+
+    const path_prompt = try std.fmt.allocPrint(allocator, "Install path for zigup (default: {s}): ", .{default_path});
+
+    var path = try promptUserAlloc(allocator, path_prompt);
+
+    if (path.len == 0) path = default_path;
+
+    const install_path = try std.fmt.allocPrint(allocator, "{s}/cache", .{path});
+
+    // TODO: Support other shells
+    if (std.posix.getenv("SHELL")) |shell| {
+        if (std.mem.containsAtLeast(u8, shell, 1, "bash")) {
+            try outputEnvForBash(allocator, .{ .path = path, .install_path = install_path });
+        } else {
+            @panic("Could not guess the current shell");
+        }
+    } else {
+        @panic("Could not guess the current shell");
+    }
+}
+
+pub fn outputEnvForBash(allocator: Allocator, config: ZigupConfig) !void {
+    const env = try std.fmt.allocPrint(
+        allocator,
+        "export ZIGUP_DIR=\"{s}\"\nexport ZIGUP_INSTALL_DIR=\"{s}\"\nexport PATH=\"$PATH:{s}/default\"",
+        .{ config.path, config.install_path, config.path },
+    );
+    loginfo("bash env: \n{s}", .{env});
+
+    std.fs.makeDirAbsolute(config.path) catch |err| if (err != error.PathAlreadyExists) return err;
+
+    const env_file = try std.fmt.allocPrint(allocator, "{s}/env", .{config.path});
+
+    const fd = try std.fs.createFileAbsolute(env_file, .{});
+    errdefer fd.close();
+
+    try fd.writeAll(env);
+
+    const bash_config = try std.fmt.allocPrint(allocator, "[ -f \"{s}\" ] && source \"{s}\"", .{ env_file, env_file });
+
+    try std.io.getStdOut().writeAll("Add this to your .bashrc:\n");
+    try std.io.getStdOut().writeAll(bash_config);
+}
+
+pub fn readConfigFromEnv() ?ZigupConfig {
+    return .{
+        .path = std.posix.getenv("ZIGUP_DIR") orelse return null,
+        .install_path = std.posix.getenv("ZIGUP_INSTALL_DIR") orelse return null,
+    };
+}
+
 pub fn main() !u8 {
     return zigup() catch |e| switch (e) {
         error.AlreadyReported => return 1,
         else => return e,
     };
 }
+
 pub fn zigup() !u8 {
     if (builtin.os.tag == .windows) {
         _ = try std.os.windows.WSAStartup(2, 2);
@@ -190,6 +293,13 @@ pub fn zigup() !u8 {
     const args_array = try std.process.argsAlloc(allocator);
     // no need to free, os will do it
     //defer std.process.argsFree(allocator, argsArray);
+
+    const config = readConfigFromEnv() orelse return {
+        try configure(allocator);
+        return 0;
+    };
+
+    _ = config;
 
     var args = if (args_array.len == 0) args_array else args_array[1..];
     // parse common options
@@ -670,7 +780,9 @@ fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, verify_exi
         dir.close();
     }
 
-    const link_path = std.posix.getenv("ZIGUP_DIR") orelse @panic("$ZIGUP_DIR not defined");
+    const zigup_path = std.posix.getenv("ZIGUP_DIR") orelse @panic("$ZIGUP_DIR not defined");
+
+    const link_path = try std.fmt.allocPrint(allocator, "{s}/default", .{zigup_path});
 
     loginfo("link path = {s}", .{link_path});
 
