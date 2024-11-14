@@ -233,10 +233,13 @@ pub fn configure(allocator: Allocator) !void {
 
     const install_path = try std.fmt.allocPrint(allocator, "{s}/cache", .{path});
 
+    if (!std.posix.isatty(std.io.getStdOut().handle))
+        return error.NonInteractiveTerminal;
+
     // TODO: Support other shells
     if (std.posix.getenv("SHELL")) |shell| {
         if (std.mem.containsAtLeast(u8, shell, 1, "bash")) {
-            try outputEnvForBash(allocator, .{ .path = path, .install_path = install_path });
+            try outputShellEnv(allocator, .{ .path = path, .install_path = install_path });
         } else {
             @panic("Could not guess the current shell");
         }
@@ -245,11 +248,33 @@ pub fn configure(allocator: Allocator) !void {
     }
 }
 
-pub fn outputEnvForBash(allocator: Allocator, config: ZigupConfig) !void {
+const shellEnvFmt =
+    \\#!/bin/sh
+    \\
+    \\# Path to env
+    \\export ZIGUP_DIR="{s}"
+    \\# Path to cache
+    \\export ZIGUP_INSTALL_DIR="$ZIGUP_DIR/cache"
+    \\
+    \\case ":$PATH:" in
+    \\    *:"$ZIGUP_DIR/default":*)
+    \\        ;;
+    \\    *)
+    \\        # Prepend to override system-hide install
+    \\        export PATH="$ZIGUP_DIR/default:$PATH"
+    \\        ;;
+    \\esac
+;
+
+const sourceEnvFmt =
+    \\[ -f \"{s}\" ] && source \"{s}\"
+;
+
+pub fn outputShellEnv(allocator: Allocator, config: ZigupConfig) !void {
     const env = try std.fmt.allocPrint(
         allocator,
-        "export ZIGUP_DIR=\"{s}\"\nexport ZIGUP_INSTALL_DIR=\"{s}\"\nexport PATH=\"$PATH:{s}/default\"",
-        .{ config.path, config.install_path, config.path },
+        shellEnvFmt,
+        .{config.path},
     );
     loginfo("bash env: \n{s}", .{env});
 
@@ -262,7 +287,7 @@ pub fn outputEnvForBash(allocator: Allocator, config: ZigupConfig) !void {
 
     try fd.writeAll(env);
 
-    const bash_config = try std.fmt.allocPrint(allocator, "[ -f \"{s}\" ] && source \"{s}\"", .{ env_file, env_file });
+    const bash_config = try std.fmt.allocPrint(allocator, sourceEnvFmt, .{ env_file, env_file });
 
     try std.io.getStdOut().writeAll("Add this to your .bashrc:\n");
     try std.io.getStdOut().writeAll(bash_config);
