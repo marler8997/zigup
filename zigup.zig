@@ -377,11 +377,21 @@ pub fn zigup() !u8 {
 
     const config = try readConfigFromEnv(allocator) orelse {
         try configure(allocator);
+        // NOTE: We could just make zigup work here, but we should assert that
+        // the user does the proper shell configuration. One way of doing this
+        // is to just do noting, which will cause zigup to "not work" until the
+        // shell environment is up
         return 0;
     };
 
+    // Assert that the dirs exist
     try makeDirIfMissing(config.path);
     try makeDirIfMissing(config.install_path);
+
+    // TODO: If the user removes `config.path` zigup will work while the shell
+    // is up, we should assert that the env exist, possible creating it if it's
+    // missing. This has the bonus of allowing the user to skip configuration
+    // with `ZIGUP_PATH="..." zigup ...`.
 
     var args = if (args_array.len == 0) args_array else args_array[1..];
     // parse common options
