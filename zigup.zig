@@ -30,10 +30,34 @@ var global_optional_install_dir: ?[]const u8 = null;
 var global_optional_path_link: ?[]const u8 = null;
 
 var global_enable_log = true;
+
+// TODO: Fix this
 fn loginfo(comptime fmt: []const u8, args: anytype) void {
     if (global_enable_log) {
         std.debug.print(fmt ++ "\n", args);
     }
+}
+
+inline fn fix_format_string(comptime fmt: []const u8) []const u8 {
+    if (builtin.os.tag == .windows) {
+        // Not sure what is going on here, or why they are doing this on
+        // windows, but this follows the behaviour of `loginfo` on windows.
+        // ¯\_(ツ)_/¯
+        var fixed_fmt = std.mem.zeroes([fmt.len]u8);
+        std.mem.replace(u8, fmt, '\'', '\"', &fixed_fmt);
+
+        return fixed_fmt;
+    } else {
+        return fmt;
+    }
+}
+
+inline fn loge(comptime fmt: []const u8, args: anytype) void {
+    std.log.err(fix_format_string(fmt), args);
+}
+
+inline fn logw(comptime fmt: []const u8, args: anytype) void {
+    std.log.warn(fix_format_string(fmt), args);
 }
 
 pub fn oom(e: error{OutOfMemory}) noreturn {
@@ -248,6 +272,10 @@ pub fn configure(allocator: Allocator) !void {
     }
 }
 
+inline fn isBash() bool {
+    return std.mem.endsWith(u8, std.posix.getenv("SHELL") orelse return false, "bash");
+}
+
 const shellEnvFmt =
     \\#!/bin/sh
     \\
@@ -324,8 +352,6 @@ pub fn zigup() !u8 {
         return 0;
     };
 
-    _ = config;
-
     var args = if (args_array.len == 0) args_array else args_array[1..];
     // parse common options
     //
@@ -371,12 +397,24 @@ pub fn zigup() !u8 {
         try std.io.getStdOut().writeAll(download_index.text);
         return 0;
     }
+    if (std.mem.eql(u8, "undefine", args[0])) {
+        if (args.len != 1) {
+            loge("'undefine' does not take any arguments", .{});
+            return 1;
+        }
+
+        try unsetDefaultCompiler(allocator, &config);
+
+        if (isBash()) logw("Use `hash -r` to reset the command location cache.", .{});
+        return 0;
+    }
     if (std.mem.eql(u8, "fetch", args[0])) {
         if (args.len != 2) {
             std.log.err("'fetch' command requires 1 argument but got {d}", .{args.len - 1});
             return 1;
         }
-        try fetchCompiler(allocator, args[1], .leave_default);
+
+        try fetchCompiler(allocator, args[1], &config, .leave_default);
         return 0;
     }
     if (std.mem.eql(u8, "clean", args[0])) {
@@ -435,14 +473,14 @@ pub fn zigup() !u8 {
             };
             const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, resolved_version_string });
             defer allocator.free(compiler_dir);
-            try setDefaultCompiler(allocator, compiler_dir, true);
+            try setDefaultCompiler(allocator, compiler_dir, &config, true);
             return 0;
         }
         std.log.err("'default' command requires 1 or 2 arguments but got {d}", .{args.len - 1});
         return 1;
     }
     if (args.len == 1) {
-        try fetchCompiler(allocator, args[0], .set_default);
+        try fetchCompiler(allocator, args[0], &config, .set_default);
         return 0;
     }
     const command = args[0];
@@ -488,8 +526,8 @@ pub fn runCompiler(allocator: Allocator, args: []const []const u8) !u8 {
 
 const SetDefault = enum { set_default, leave_default };
 
-fn fetchCompiler(allocator: Allocator, version_arg: []const u8, set_default: SetDefault) !void {
-    const install_dir = try getInstallDir(true);
+fn fetchCompiler(allocator: Allocator, version_arg: []const u8, config: *const ZigupConfig, set_default: SetDefault) !void {
+    const install_dir = config.install_path;
 
     var optional_download_index: ?DownloadIndex = null;
     // This is causing an LLVM error
@@ -512,9 +550,12 @@ fn fetchCompiler(allocator: Allocator, version_arg: []const u8, set_default: Set
         const master_linux_tarball = master_linux.object.get("tarball").?.string;
         break :blk VersionUrl{ .version = compiler_version, .url = master_linux_tarball };
     };
+
     const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, version_url.version });
     defer allocator.free(compiler_dir);
+
     try installCompiler(allocator, compiler_dir, version_url.url);
+
     if (is_master) {
         const master_symlink = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, "master" });
         defer allocator.free(master_symlink);
@@ -527,7 +568,7 @@ fn fetchCompiler(allocator: Allocator, version_arg: []const u8, set_default: Set
         }
     }
     if (set_default == .set_default) {
-        try setDefaultCompiler(allocator, compiler_dir, false);
+        try setDefaultCompiler(allocator, compiler_dir, config, false);
     }
 }
 
@@ -793,7 +834,13 @@ fn printDefaultCompiler(allocator: Allocator) !void {
     }
 }
 
-fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, verify_exists: bool) !void {
+fn unsetDefaultCompiler(allocator: Allocator, config: *const ZigupConfig) !void {
+    const link_path = try std.fmt.allocPrint(allocator, "{s}/default", .{config.path});
+
+    try std.posix.unlink(link_path);
+}
+
+fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, config: *const ZigupConfig, verify_exists: bool) !void {
     if (verify_exists) {
         var dir = std.fs.openDirAbsolute(compiler_dir, .{}) catch |err| switch (err) {
             error.FileNotFound => {
@@ -805,9 +852,7 @@ fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, verify_exi
         dir.close();
     }
 
-    const zigup_path = std.posix.getenv("ZIGUP_DIR") orelse @panic("$ZIGUP_DIR not defined");
-
-    const link_path = try std.fmt.allocPrint(allocator, "{s}/default", .{zigup_path});
+    const link_path = try std.fmt.allocPrint(allocator, "{s}/default", .{config.path});
 
     loginfo("link path = {s}", .{link_path});
 
