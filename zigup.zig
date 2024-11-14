@@ -31,13 +31,6 @@ var global_optional_path_link: ?[]const u8 = null;
 
 var global_enable_log = true;
 
-// TODO: Fix this
-fn loginfo(comptime fmt: []const u8, args: anytype) void {
-    if (global_enable_log) {
-        std.debug.print(fmt ++ "\n", args);
-    }
-}
-
 inline fn fix_format_string(comptime fmt: []const u8) []const u8 {
     if (builtin.os.tag == .windows) {
         // Not sure what is going on here, or why they are doing this on
@@ -49,6 +42,13 @@ inline fn fix_format_string(comptime fmt: []const u8) []const u8 {
         return fixed_fmt;
     } else {
         return fmt;
+    }
+}
+
+inline fn logi(comptime fmt: []const u8, args: anytype) void {
+    // TODO: `--verbose` option!?
+    if (builtin.mode == std.builtin.OptimizeMode.Debug) {
+        std.log.info(fix_format_string(fmt), args);
     }
 }
 
@@ -127,20 +127,18 @@ fn ignoreHttpCallback(request: []const u8) void {
     _ = request;
 }
 
-fn getInstallDir(create_missing: bool) ![]const u8 {
-    const install_dir = std.posix.getenv("ZIGUP_INSTALL_DIR") orelse @panic("$ZIGUP_INSTALL_DIR is not defined.");
+fn makeDirIfMissing(path: []const u8) !void {
+    if (builtin.mode == std.builtin.OptimizeMode.Debug)
+        std.debug.assert(std.fs.path.isAbsolute(path));
 
-    // TODO: Need we only assert this on debug builds.
-    std.debug.assert(std.fs.path.isAbsolute(install_dir));
+    logi("creating directory '{s}'", .{path});
 
-    loginfo("install directory '{s}'", .{install_dir});
-    if (create_missing) {
-        loggyMakeDirAbsolute(install_dir) catch |e| switch (e) {
-            error.PathAlreadyExists => {},
-            else => return e,
-        };
-    }
-    return install_dir;
+    std.fs.makeDirAbsolute(path) catch |e| switch (e) {
+        error.PathAlreadyExists => {
+            logi("directory '{s}' already exists!", .{path});
+        },
+        else => return e,
+    };
 }
 
 fn makeZigPathLinkString(allocator: Allocator) ![]const u8 {
@@ -236,8 +234,38 @@ pub fn yesOrNoP(comptime msg: []const u8) !bool {
 }
 
 const ZigupConfig = struct {
+    allocator: Allocator,
+
     path: []const u8,
-    install_path: []const u8,
+    install_path: []u8,
+    default_path: []u8,
+
+    const Self = @This();
+
+    pub fn init(allocator: Allocator, path: []const u8) !ZigupConfig {
+        const install_path = try std.fs.path.join(allocator, &[_][]const u8{ path, "cache" });
+        const default_path = try std.fs.path.join(allocator, &[_][]const u8{ path, "default" });
+
+        return .{
+            .allocator = allocator,
+            .path = path,
+            .install_path = install_path,
+            .default_path = default_path,
+        };
+    }
+
+    pub fn set_install_path(self: *Self, install_path: []const u8) !void {
+        self.allocator.free(self.install_path);
+
+        self.install_path = try self.allocator.alloc(u8, install_path.len);
+
+        @memcpy(self.install_path, install_path);
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.allocator.free(self.default_path);
+        self.allocator.free(self.install_path);
+    }
 };
 
 pub fn configure(allocator: Allocator) !void {
@@ -248,7 +276,7 @@ pub fn configure(allocator: Allocator) !void {
     const home = std.posix.getenv("HOME") orelse @panic("$HOME is not in env");
     const default_path = try std.fmt.allocPrint(allocator, "{s}/.zigup", .{home});
 
-    loginfo("default zigup_path = '{s}'", .{default_path});
+    logi("default zigup_path = '{s}'", .{default_path});
 
     const path_prompt = try std.fmt.allocPrint(allocator, "Install path for zigup (default: {s}): ", .{default_path});
 
@@ -256,18 +284,16 @@ pub fn configure(allocator: Allocator) !void {
 
     if (path.len == 0) path = default_path;
 
-    const install_path = try std.fmt.allocPrint(allocator, "{s}/cache", .{path});
+    // TODO: Prompt if the users wants to change this
+    // const install_path = try std.fmt.allocPrint(allocator, "{s}/cache", .{path});
 
     if (!std.posix.isatty(std.io.getStdOut().handle))
         return error.NonInteractiveTerminal;
 
-    // TODO: Support other shells
-    if (std.posix.getenv("SHELL")) |shell| {
-        if (std.mem.containsAtLeast(u8, shell, 1, "bash")) {
-            try outputShellEnv(allocator, .{ .path = path, .install_path = install_path });
-        } else {
-            @panic("Could not guess the current shell");
-        }
+    // TODO: add zsh
+    // TODO: add fish
+    if (isBash()) {
+        try outputPosixShellEnv(allocator, path);
     } else {
         @panic("Could not guess the current shell");
     }
@@ -299,17 +325,17 @@ const sourceEnvFmt =
     \\[ -f \"{s}\" ] && source \"{s}\"
 ;
 
-pub fn outputShellEnv(allocator: Allocator, config: ZigupConfig) !void {
+pub fn outputPosixShellEnv(allocator: Allocator, path: []const u8) !void {
     const env = try std.fmt.allocPrint(
         allocator,
         shellEnvFmt,
-        .{config.path},
+        .{path},
     );
-    loginfo("bash env: \n{s}", .{env});
+    logi("bash env: \n{s}", .{env});
 
-    std.fs.makeDirAbsolute(config.path) catch |err| if (err != error.PathAlreadyExists) return err;
+    try makeDirIfMissing(path);
 
-    const env_file = try std.fmt.allocPrint(allocator, "{s}/env", .{config.path});
+    const env_file = try std.fs.path.join(allocator, &[_][]const u8{ path, "env" });
 
     const fd = try std.fs.createFileAbsolute(env_file, .{});
     errdefer fd.close();
@@ -322,11 +348,12 @@ pub fn outputShellEnv(allocator: Allocator, config: ZigupConfig) !void {
     try std.io.getStdOut().writeAll(bash_config);
 }
 
-pub fn readConfigFromEnv() ?ZigupConfig {
-    return .{
-        .path = std.posix.getenv("ZIGUP_DIR") orelse return null,
-        .install_path = std.posix.getenv("ZIGUP_INSTALL_DIR") orelse return null,
-    };
+pub fn readConfigFromEnv(allocator: Allocator) !?ZigupConfig {
+    // TODO: Allow override of install_path
+    return try ZigupConfig.init(
+        allocator,
+        std.posix.getenv("ZIGUP_DIR") orelse return null,
+    );
 }
 
 pub fn main() !u8 {
@@ -348,10 +375,13 @@ pub fn zigup() !u8 {
     // no need to free, os will do it
     //defer std.process.argsFree(allocator, argsArray);
 
-    const config = readConfigFromEnv() orelse return {
+    const config = try readConfigFromEnv(allocator) orelse {
         try configure(allocator);
         return 0;
     };
+
+    try makeDirIfMissing(config.path);
+    try makeDirIfMissing(config.install_path);
 
     var args = if (args_array.len == 0) args_array else args_array[1..];
     // parse common options
@@ -376,7 +406,7 @@ pub fn zigup() !u8 {
                 return 0;
             } else {
                 if (newlen == 0 and std.mem.eql(u8, "run", arg)) {
-                    return try runCompiler(allocator, args[i + 1 ..]);
+                    return try runCompiler(allocator, &config, args[i + 1 ..]);
                 }
                 args[newlen] = args[i];
                 newlen += 1;
@@ -420,9 +450,9 @@ pub fn zigup() !u8 {
     }
     if (std.mem.eql(u8, "clean", args[0])) {
         if (args.len == 1) {
-            try cleanCompilers(allocator, null);
+            try cleanCompilers(allocator, &config, null);
         } else if (args.len == 2) {
-            try cleanCompilers(allocator, args[1]);
+            try cleanCompilers(allocator, &config, args[1]);
         } else {
             std.log.err("'clean' command requires 0 or 1 arguments but got {d}", .{args.len - 1});
             return 1;
@@ -434,7 +464,7 @@ pub fn zigup() !u8 {
             std.log.err("'keep' command requires 1 argument but got {d}", .{args.len - 1});
             return 1;
         }
-        try keepCompiler(args[1]);
+        try keepCompiler(&config, args[1]);
         return 0;
     }
     if (std.mem.eql(u8, "list", args[0])) {
@@ -442,7 +472,7 @@ pub fn zigup() !u8 {
             std.log.err("'list' command requires 0 arguments but got {d}", .{args.len - 1});
             return 1;
         }
-        try listCompilers();
+        try listCompilers(&config);
         return 0;
     }
     if (std.mem.eql(u8, "default", args[0])) {
@@ -452,14 +482,13 @@ pub fn zigup() !u8 {
         }
         if (args.len == 2) {
             const version_string = args[1];
-            const install_dir_string = try getInstallDir(true);
 
             const resolved_version_string = init_resolved: {
                 if (!std.mem.eql(u8, version_string, "master"))
                     break :init_resolved version_string;
 
                 const optional_master_dir: ?[]const u8 = blk: {
-                    var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
+                    var install_dir = std.fs.openDirAbsolute(config.install_path, .{ .iterate = true }) catch |e| switch (e) {
                         error.FileNotFound => break :blk null,
                         else => return e,
                     };
@@ -472,7 +501,7 @@ pub fn zigup() !u8 {
                     return 1;
                 };
             };
-            const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, resolved_version_string });
+            const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ config.install_path, resolved_version_string });
             defer allocator.free(compiler_dir);
             try setDefaultCompiler(allocator, compiler_dir, &config, true);
             return 0;
@@ -492,7 +521,7 @@ pub fn zigup() !u8 {
     //const optionalInstallPath = try find_zigs(allocator);
 }
 
-pub fn runCompiler(allocator: Allocator, args: []const []const u8) !u8 {
+pub fn runCompiler(allocator: Allocator, config: *const ZigupConfig, args: []const []const u8) !u8 {
     // disable log so we don't add extra output to whatever the compiler will output
     global_enable_log = false;
     if (args.len <= 1) {
@@ -500,9 +529,8 @@ pub fn runCompiler(allocator: Allocator, args: []const []const u8) !u8 {
         return 1;
     }
     const version_string = args[0];
-    const install_dir_string = try getInstallDir(true);
 
-    const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, version_string });
+    const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ config.install_path, version_string });
     defer allocator.free(compiler_dir);
     if (!try existsAbsolute(compiler_dir)) {
         std.log.err("compiler '{s}' does not exist, fetch it first with: zigup fetch {0s}", .{version_string});
@@ -600,31 +628,22 @@ fn fetchDownloadIndex(allocator: Allocator) !DownloadIndex {
 
 // XXX: What?
 // TODO: Get rid of these
-fn loggyMakeDirAbsolute(dir_absolute: []const u8) !void {
-    if (builtin.os.tag == .windows) {
-        loginfo("mkdir \"{s}\"", .{dir_absolute});
-    } else {
-        loginfo("mkdir '{s}'", .{dir_absolute});
-    }
-    try std.fs.makeDirAbsolute(dir_absolute);
-}
-
 fn loggyDeleteTreeAbsolute(dir_absolute: []const u8) !void {
     if (builtin.os.tag == .windows) {
-        loginfo("rd /s /q \"{s}\"", .{dir_absolute});
+        logi("rd /s /q \"{s}\"", .{dir_absolute});
     } else {
-        loginfo("rm -rf '{s}'", .{dir_absolute});
+        logi("rm -rf '{s}'", .{dir_absolute});
     }
     try fixdeletetree.deleteTreeAbsolute(dir_absolute);
 }
 
 pub fn loggyRenameAbsolute(old_path: []const u8, new_path: []const u8) !void {
-    loginfo("mv '{s}' '{s}'", .{ old_path, new_path });
+    logi("mv '{s}' '{s}'", .{ old_path, new_path });
     try std.fs.renameAbsolute(old_path, new_path);
 }
 
 pub fn loggySymlinkAbsolute(target_path: []const u8, sym_link_path: []const u8, flags: std.fs.Dir.SymLinkFlags) !void {
-    loginfo("ln -s '{s}' '{s}'", .{ target_path, sym_link_path });
+    logi("ln -s '{s}' '{s}'", .{ target_path, sym_link_path });
     // NOTE: can't use symLinkAbsolute because it requires target_path to be absolute but we don't want that
     //       not sure if it is a bug in the standard lib or not
     //try std.fs.symLinkAbsolute(target_path, sym_link_path, flags);
@@ -637,7 +656,7 @@ pub fn loggyUpdateSymlink(target_path: []const u8, sym_link_path: []const u8, fl
     var current_target_path_buffer: [std.fs.max_path_bytes]u8 = undefined;
     if (std.fs.readLinkAbsolute(sym_link_path, &current_target_path_buffer)) |current_target_path| {
         if (std.mem.eql(u8, target_path, current_target_path)) {
-            loginfo("symlink '{s}' already points to '{s}'", .{ sym_link_path, target_path });
+            logi("symlink '{s}' already points to '{s}'", .{ sym_link_path, target_path });
             return false; // already up-to-date
         }
         try std.posix.unlink(sym_link_path);
@@ -675,10 +694,8 @@ fn existsAbsolute(absolutePath: []const u8) !bool {
     return true;
 }
 
-fn listCompilers() !void {
-    const install_dir_string = try getInstallDir(false);
-
-    var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
+fn listCompilers(config: *const ZigupConfig) !void {
+    var install_dir = std.fs.openDirAbsolute(config.install_path, .{ .iterate = true }) catch |e| switch (e) {
         error.FileNotFound => return,
         else => return e,
     };
@@ -697,10 +714,8 @@ fn listCompilers() !void {
     }
 }
 
-fn keepCompiler(compiler_version: []const u8) !void {
-    const install_dir_string = try getInstallDir(true);
-
-    var install_dir = try std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true });
+fn keepCompiler(config: *const ZigupConfig, compiler_version: []const u8) !void {
+    var install_dir = try std.fs.openDirAbsolute(config.install_path, .{ .iterate = true });
     defer install_dir.close();
 
     var compiler_dir = install_dir.openDir(compiler_version, .{}) catch |e| switch (e) {
@@ -712,17 +727,15 @@ fn keepCompiler(compiler_version: []const u8) !void {
     };
     var keep_fd = try compiler_dir.createFile("keep", .{});
     keep_fd.close();
-    loginfo("created '{s}{c}{s}{c}{s}'", .{ install_dir_string, std.fs.path.sep, compiler_version, std.fs.path.sep, "keep" });
+    logi("created '{s}{c}{s}{c}{s}'", .{ config.install_path, std.fs.path.sep, compiler_version, std.fs.path.sep, "keep" });
 }
 
-fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
-    const install_dir_string = try getInstallDir(true);
-
+fn cleanCompilers(allocator: Allocator, config: *const ZigupConfig, compiler_name_opt: ?[]const u8) !void {
     // getting the current compiler
     const default_comp_opt = try getDefaultCompiler(allocator);
     defer if (default_comp_opt) |default_compiler| allocator.free(default_compiler);
 
-    var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
+    var install_dir = std.fs.openDirAbsolute(config.install_path, .{ .iterate = true }) catch |e| switch (e) {
         error.FileNotFound => return,
         else => return e,
     };
@@ -734,7 +747,7 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
             std.log.err("cannot clean '{s}' ({s})", .{ compiler_name, reason });
             return error.AlreadyReported;
         }
-        loginfo("deleting '{s}{c}{s}'", .{ install_dir_string, std.fs.path.sep, compiler_name });
+        logi("deleting '{s}{c}{s}'", .{ config.install_path, std.fs.path.sep, compiler_name });
         try fixdeletetree.deleteTree(install_dir, compiler_name);
     } else {
         var it = install_dir.iterate();
@@ -742,7 +755,7 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
             if (entry.kind != .directory)
                 continue;
             if (getKeepReason(master_points_to_opt, default_comp_opt, entry.name)) |reason| {
-                loginfo("keeping '{s}' ({s})", .{ entry.name, reason });
+                logi("keeping '{s}' ({s})", .{ entry.name, reason });
                 continue;
             }
 
@@ -750,14 +763,14 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
                 var compiler_dir = try install_dir.openDir(entry.name, .{});
                 defer compiler_dir.close();
                 if (compiler_dir.access("keep", .{})) |_| {
-                    loginfo("keeping '{s}' (has keep file)", .{entry.name});
+                    logi("keeping '{s}' (has keep file)", .{entry.name});
                     continue;
                 } else |e| switch (e) {
                     error.FileNotFound => {},
                     else => return e,
                 }
             }
-            loginfo("deleting '{s}{c}{s}'", .{ install_dir_string, std.fs.path.sep, entry.name });
+            logi("deleting '{s}{c}{s}'", .{ config.install_path, std.fs.path.sep, entry.name });
             try fixdeletetree.deleteTree(install_dir, entry.name);
         }
     }
@@ -854,8 +867,6 @@ fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, config: *c
     }
 
     const link_path = try std.fmt.allocPrint(allocator, "{s}/default", .{config.path});
-
-    loginfo("link path = {s}", .{link_path});
 
     const target = try std.fs.path.join(allocator, &[_][]const u8{ compiler_dir, "files" });
     defer allocator.free(target);
@@ -1094,14 +1105,14 @@ fn getDefaultUrl(allocator: Allocator, compiler_version: []const u8) ![]const u8
 
 fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const u8) !void {
     if (try existsAbsolute(compiler_dir)) {
-        loginfo("compiler '{s}' already installed", .{compiler_dir});
+        logi("compiler '{s}' already installed", .{compiler_dir});
         return;
     }
 
     const installing_dir = try std.mem.concat(allocator, u8, &[_][]const u8{ compiler_dir, ".installing" });
     defer allocator.free(installing_dir);
     try loggyDeleteTreeAbsolute(installing_dir);
-    try loggyMakeDirAbsolute(installing_dir);
+    try makeDirIfMissing(installing_dir);
 
     const archive_basename = std.fs.path.basename(url);
     var archive_root_dir: []const u8 = undefined;
@@ -1110,7 +1121,7 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
     {
         const archive_absolute = try std.fs.path.join(allocator, &[_][]const u8{ installing_dir, archive_basename });
         defer allocator.free(archive_absolute);
-        loginfo("downloading '{s}' to '{s}'", .{ url, archive_absolute });
+        logi("downloading '{s}' to '{s}'", .{ url, archive_absolute });
 
         switch (blk: {
             const file = try std.fs.createFileAbsolute(archive_absolute, .{});
@@ -1140,13 +1151,13 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
 
                     var installing_dir_opened = try std.fs.openDirAbsolute(installing_dir, .{});
                     defer installing_dir_opened.close();
-                    loginfo("extracting archive to \"{s}\"", .{installing_dir});
+                    logi("extracting archive to \"{s}\"", .{installing_dir});
                     var timer = try std.time.Timer.start();
                     var archive_file = try std.fs.openFileAbsolute(archive_absolute, .{});
                     defer archive_file.close();
                     try std.zip.extract(installing_dir_opened, archive_file.seekableStream(), .{});
                     const time = timer.read();
-                    loginfo("extracted archive in {d:.2} s", .{@as(f32, @floatFromInt(time)) / @as(f32, @floatFromInt(std.time.ns_per_s))});
+                    logi("extracted archive in {d:.2} s", .{@as(f32, @floatFromInt(time)) / @as(f32, @floatFromInt(std.time.ns_per_s))});
                 }
             }
 
@@ -1195,7 +1206,7 @@ fn logRun(allocator: Allocator, argv: []const []const u8) !void {
         offset += arg.len;
     }
     std.debug.assert(offset == buffer.len);
-    loginfo("[RUN] {s}", .{buffer});
+    logi("[RUN] {s}", .{buffer});
 }
 
 pub fn getCommandStringLength(argv: []const []const u8) usize {
