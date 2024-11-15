@@ -319,6 +319,7 @@ const shellEnvFmt =
     \\        export PATH="$ZIGUP_DIR/default:$PATH"
     \\        ;;
     \\esac
+    \\
 ;
 
 const sourceEnvFmt =
