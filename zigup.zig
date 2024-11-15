@@ -512,6 +512,10 @@ pub fn zigup() !u8 {
                     return 1;
                 };
             };
+
+            // If the user suplys us with a path, make it the default compiler
+            if (try setDefaultCompilerFromPath(&config, resolved_version_string)) return 0;
+
             const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ config.install_path, resolved_version_string });
             defer allocator.free(compiler_dir);
             try setDefaultCompiler(allocator, compiler_dir, &config, true);
@@ -877,20 +881,42 @@ fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, config: *c
         dir.close();
     }
 
-    const link_path = try std.fmt.allocPrint(allocator, "{s}/default", .{config.path});
-
     const target = try std.fs.path.join(allocator, &[_][]const u8{ compiler_dir, "files" });
     defer allocator.free(target);
 
     if (builtin.os.tag == .windows) {
-        try createExeLink(target, link_path);
+        try createExeLink(target, config.default_path);
     } else {
-        _ = try loggyUpdateSymlink(target, link_path, .{});
+        _ = try loggyUpdateSymlink(target, config.default_path, .{});
     }
 
     // TODO: Keep or remove this?!
     // FIXME: This is broken
     //try verifyPathLink(allocator, link_path);
+}
+
+fn openDir(path: []const u8) !std.fs.Dir {
+    return if (std.fs.path.isAbsolute(path))
+        std.fs.openDirAbsolute(path, .{})
+    else
+        std.fs.cwd().openDir(path, .{});
+}
+
+fn setDefaultCompilerFromPath(config: *const ZigupConfig, path: []const u8) !bool {
+    var dir = openDir(path) catch |err|
+        if (err == error.FileNotFound) return false else return err;
+    errdefer dir.close();
+
+    var buf = std.mem.zeroes([std.os.linux.PATH_MAX]u8);
+    const real_path: []const u8 = try dir.realpath(".", &buf);
+
+    logi("set default compiler directory '{s}'", .{real_path});
+
+    // TODO: Asset that the path leads to a valid zig compiler.
+    // TODO: Windows
+    _ = try loggyUpdateSymlink(real_path, config.default_path, .{});
+
+    return true;
 }
 
 /// Verify that path_link will work.  It verifies that `path_link` is
