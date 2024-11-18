@@ -31,6 +31,8 @@ var global_optional_path_link: ?[]const u8 = null;
 
 var global_enable_log = true;
 
+var verbose = false;
+
 inline fn fix_format_string(comptime fmt: []const u8) []const u8 {
     if (builtin.os.tag == .windows) {
         // Not sure what is going on here, or why they are doing this on
@@ -46,10 +48,7 @@ inline fn fix_format_string(comptime fmt: []const u8) []const u8 {
 }
 
 inline fn logi(comptime fmt: []const u8, args: anytype) void {
-    // TODO: `--verbose` option!?
-    if (builtin.mode == std.builtin.OptimizeMode.Debug) {
-        std.log.info(fix_format_string(fmt), args);
-    }
+    if (verbose) std.log.info(fix_format_string(fmt), args);
 }
 
 inline fn loge(comptime fmt: []const u8, args: anytype) void {
@@ -396,7 +395,6 @@ pub fn zigup() !u8 {
 
     var args = if (args_array.len == 0) args_array else args_array[1..];
     // parse common options
-    //
     {
         var i: usize = 0;
         var newlen: usize = 0;
@@ -415,6 +413,8 @@ pub fn zigup() !u8 {
             } else if (std.mem.eql(u8, "-h", arg) or std.mem.eql(u8, "--help", arg)) {
                 help();
                 return 0;
+            } else if (std.mem.eql(u8, "-v", arg) or std.mem.eql(u8, "--verbose", arg)) {
+                verbose = true;
             } else {
                 if (newlen == 0 and std.mem.eql(u8, "run", arg)) {
                     return try runCompiler(allocator, &config, args[i + 1 ..]);
