@@ -26,11 +26,6 @@ const url_platform = os ++ "-" ++ arch;
 const json_platform = arch ++ "-" ++ os;
 const archive_ext = if (builtin.os.tag == .windows) "zip" else "tar.xz";
 
-var global_optional_install_dir: ?[]const u8 = null;
-var global_optional_path_link: ?[]const u8 = null;
-
-var global_enable_log = true;
-
 /// Ouput debug info
 var verbose = false;
 
@@ -144,14 +139,12 @@ fn makeDirIfMissing(path: []const u8) !void {
     };
 }
 
-fn makeZigPathLinkString(allocator: Allocator) ![]const u8 {
-    if (global_optional_path_link) |path| return path;
-
-    const zigup_dir = try std.fs.selfExeDirPathAlloc(allocator);
-    defer allocator.free(zigup_dir);
-
-    return try std.fs.path.join(allocator, &[_][]const u8{ zigup_dir, comptime "zig" ++ builtin.target.exeFileExt() });
-}
+// fn makeZigPathLinkString(allocator: Allocator) ![]const u8 {
+//     const zigup_dir = try std.fs.selfExeDirPathAlloc(allocator);
+//     defer allocator.free(zigup_dir);
+//
+//     return try std.fs.path.join(allocator, &[_][]const u8{ zigup_dir, comptime "zig" ++ builtin.target.exeFileExt() });
+// }
 
 // TODO: this should be in standard lib
 fn toAbsolute(allocator: Allocator, path: []const u8) ![]u8 {
@@ -404,17 +397,7 @@ pub fn zigup() !u8 {
         var newlen: usize = 0;
         while (i < args.len) : (i += 1) {
             const arg = args[i];
-            if (std.mem.eql(u8, "--install-dir", arg)) {
-                global_optional_install_dir = try getCmdOpt(args, &i);
-                if (!std.fs.path.isAbsolute(global_optional_install_dir.?)) {
-                    global_optional_install_dir = try toAbsolute(allocator, global_optional_install_dir.?);
-                }
-            } else if (std.mem.eql(u8, "--path-link", arg)) {
-                global_optional_path_link = try getCmdOpt(args, &i);
-                if (!std.fs.path.isAbsolute(global_optional_path_link.?)) {
-                    global_optional_path_link = try toAbsolute(allocator, global_optional_path_link.?);
-                }
-            } else if (std.mem.eql(u8, "-h", arg) or std.mem.eql(u8, "--help", arg)) {
+            if (std.mem.eql(u8, "-h", arg) or std.mem.eql(u8, "--help", arg)) {
                 help();
                 return 0;
             } else if (std.mem.eql(u8, "-v", arg) or std.mem.eql(u8, "--verbose", arg)) {
@@ -492,7 +475,7 @@ pub fn zigup() !u8 {
     }
     if (std.mem.eql(u8, "default", args[0])) {
         if (args.len == 1) {
-            try printDefaultCompiler(allocator);
+            try printDefaultCompiler(allocator, &config);
             return 0;
         }
         if (args.len == 2) {
@@ -541,8 +524,6 @@ pub fn zigup() !u8 {
 }
 
 pub fn runCompiler(allocator: Allocator, config: *const ZigupConfig, args: []const []const u8) !u8 {
-    // disable log so we don't add extra output to whatever the compiler will output
-    global_enable_log = false;
     if (args.len <= 1) {
         std.log.err("zigup run requires at least 2 arguments: zigup run VERSION PROG ARGS...", .{});
         return 1;
@@ -751,7 +732,7 @@ fn keepCompiler(config: *const ZigupConfig, compiler_version: []const u8) !void 
 
 fn cleanCompilers(allocator: Allocator, config: *const ZigupConfig, compiler_name_opt: ?[]const u8) !void {
     // getting the current compiler
-    const default_comp_opt = try getDefaultCompiler(allocator);
+    const default_comp_opt = try getDefaultCompiler(allocator, config);
     defer if (default_comp_opt) |default_compiler| allocator.free(default_compiler);
 
     var install_dir = std.fs.openDirAbsolute(config.install_path, .{ .iterate = true }) catch |e| switch (e) {
@@ -794,12 +775,13 @@ fn cleanCompilers(allocator: Allocator, config: *const ZigupConfig, compiler_nam
         }
     }
 }
-fn readDefaultCompiler(allocator: Allocator, buffer: *[std.fs.max_path_bytes + 1]u8) !?[]const u8 {
-    const path_link = try makeZigPathLinkString(allocator);
-    defer allocator.free(path_link);
 
+fn readDefaultCompiler(allocator: Allocator, buffer: *[std.fs.max_path_bytes + 1]u8, config: *const ZigupConfig) !?[]const u8 {
+    logi("read default compiler link '{s}'", .{config.default_path});
+
+    // TODO: Log for windows
     if (builtin.os.tag == .windows) {
-        var file = std.fs.openFileAbsolute(path_link, .{}) catch |e| switch (e) {
+        var file = std.fs.openFileAbsolute(config.default_path, .{}) catch |e| switch (e) {
             error.FileNotFound => return null,
             else => return e,
         };
@@ -807,22 +789,24 @@ fn readDefaultCompiler(allocator: Allocator, buffer: *[std.fs.max_path_bytes + 1
         try file.seekTo(win32exelink.exe_offset);
         const len = try file.readAll(buffer);
         if (len != buffer.len) {
-            std.log.err("path link file '{s}' is too small", .{path_link});
+            std.log.err("path link file '{s}' is too small", .{config.default_path});
             return error.AlreadyReported;
         }
         const target_exe = std.mem.sliceTo(buffer, 0);
-        return try allocator.dupe(u8, targetPathToVersion(target_exe));
+        try targetPathToVersion(allocator, target_exe);
     }
 
-    const target_path = std.fs.readLinkAbsolute(path_link, buffer[0..std.fs.max_path_bytes]) catch |e| switch (e) {
+    const target_path = std.fs.readLinkAbsolute(config.default_path, buffer[0..std.fs.max_path_bytes]) catch |e| switch (e) {
         error.FileNotFound => return null,
         else => return e,
     };
-    defer allocator.free(target_path);
-    return try allocator.dupe(u8, targetPathToVersion(target_path));
+
+    return target_path;
 }
-fn targetPathToVersion(target_path: []const u8) []const u8 {
-    return std.fs.path.basename(std.fs.path.dirname(std.fs.path.dirname(target_path).?).?);
+
+inline fn targetPathToVersion(allocator: Allocator, path: []const u8) !void {
+    const zig_path = try std.fs.path.join(allocator, &[_][]const u8{ path, "zig" });
+    _ = try run(allocator, &[_][]const u8{ zig_path, "version" });
 }
 
 fn readMasterDir(buffer: *[std.fs.max_path_bytes]u8, install_dir: *std.fs.Dir) !?[]const u8 {
@@ -840,9 +824,13 @@ fn readMasterDir(buffer: *[std.fs.max_path_bytes]u8, install_dir: *std.fs.Dir) !
     };
 }
 
-fn getDefaultCompiler(allocator: Allocator) !?[]const u8 {
+fn getDefaultCompiler(allocator: Allocator, config: *const ZigupConfig) !?[]const u8 {
+    // XXX: Why +1!?
     var buffer: [std.fs.max_path_bytes + 1]u8 = undefined;
-    const slice_path = (try readDefaultCompiler(allocator, &buffer)) orelse return null;
+
+    // Dupped again!?
+    const slice_path = try readDefaultCompiler(allocator, &buffer, config) orelse return null;
+
     const path_to_return = try allocator.alloc(u8, slice_path.len);
     @memcpy(path_to_return, slice_path);
     return path_to_return;
@@ -856,14 +844,11 @@ fn getMasterDir(allocator: Allocator, install_dir: *std.fs.Dir) !?[]const u8 {
     return path_to_return;
 }
 
-fn printDefaultCompiler(allocator: Allocator) !void {
-    const default_compiler_opt = try getDefaultCompiler(allocator);
-    defer if (default_compiler_opt) |default_compiler| allocator.free(default_compiler);
-    const stdout = std.io.getStdOut().writer();
-    if (default_compiler_opt) |default_compiler| {
-        try stdout.print("{s}\n", .{default_compiler});
+fn printDefaultCompiler(allocator: Allocator, config: *const ZigupConfig) !void {
+    if (try getDefaultCompiler(allocator, config)) |default_compiler| {
+        try targetPathToVersion(allocator, default_compiler);
     } else {
-        try stdout.writeAll("<no-default>\n");
+        try std.io.getStdOut().writeAll("<no-default>\n");
     }
 }
 
