@@ -31,7 +31,11 @@ var global_optional_path_link: ?[]const u8 = null;
 
 var global_enable_log = true;
 
+/// Ouput debug info
 var verbose = false;
+
+/// Force the given operation, i.e., `zigup --force default .`
+var force = false;
 
 inline fn fix_format_string(comptime fmt: []const u8) []const u8 {
     if (builtin.os.tag == .windows) {
@@ -514,7 +518,7 @@ pub fn zigup() !u8 {
             };
 
             // If the user suplys us with a path, make it the default compiler
-            if (try setDefaultCompilerFromPath(&config, resolved_version_string)) return 0;
+            if (try setDefaultCompilerFromPath(allocator, &config, resolved_version_string)) return 0;
 
             const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ config.install_path, resolved_version_string });
             defer allocator.free(compiler_dir);
@@ -897,18 +901,50 @@ fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, config: *c
 
 fn openDir(path: []const u8) !std.fs.Dir {
     return if (std.fs.path.isAbsolute(path))
-        std.fs.openDirAbsolute(path, .{})
+        std.fs.openDirAbsolute(path, .{ .iterate = true })
     else
-        std.fs.cwd().openDir(path, .{});
+        std.fs.cwd().openDir(path, .{ .iterate = true });
 }
 
-fn setDefaultCompilerFromPath(config: *const ZigupConfig, path: []const u8) !bool {
+fn findCompiler(allocator: Allocator, dir: *const std.fs.Dir, buf: []u8) !?[]u8 {
+    var it = try dir.walk(allocator);
+    errdefer it.deinit();
+
+    while (try it.next()) |entry| {
+        if (entry.kind == .file and std.mem.eql(u8, entry.basename, "zig")) {
+            const real_path = try entry.dir.realpath(".", buf);
+
+            logi("found zig at '{s}'", .{real_path});
+
+            return real_path;
+        }
+
+        if (entry.kind == .directory) {
+            logi("searching '{s}'", .{entry.basename});
+
+            var next = try entry.dir.openDir(entry.basename, .{ .iterate = true });
+            errdefer next.close();
+
+            if (try findCompiler(allocator, &next, buf)) |zig| return zig;
+        }
+    }
+
+    return null;
+}
+
+fn setDefaultCompilerFromPath(allocator: Allocator, config: *const ZigupConfig, path: []const u8) !bool {
     var dir = openDir(path) catch |err|
         if (err == error.FileNotFound) return false else return err;
     errdefer dir.close();
 
     var buf = std.mem.zeroes([std.os.linux.PATH_MAX]u8);
-    const real_path: []const u8 = try dir.realpath(".", &buf);
+    var real_path: []const u8 = try dir.realpath(".", &buf);
+
+    if (!force) {
+        logi("searching '{s}'", .{path});
+        // XXX: Error out here?
+        real_path = try findCompiler(allocator, &dir, &buf) orelse return false;
+    }
 
     logi("set default compiler directory '{s}'", .{real_path});
 
