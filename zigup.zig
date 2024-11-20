@@ -5,6 +5,10 @@ const mem = std.mem;
 const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
 
+pub const std_options = .{
+    .log_level = .info,
+};
+
 const fixdeletetree = @import("fixdeletetree.zig");
 
 const arch = switch (builtin.cpu.arch) {
