@@ -436,9 +436,8 @@ pub fn zigup() !u8 {
             return 1;
         }
 
-        try unsetDefaultCompiler(allocator, &config);
+        try unsetDefaultCompiler(&config);
 
-        if (isBash()) logw("Use `hash -r` to reset the command location cache.", .{});
         return 0;
     }
     if (std.mem.eql(u8, "fetch", args[0])) {
@@ -856,10 +855,13 @@ fn printDefaultCompiler(allocator: Allocator, config: *const ZigupConfig) !void 
     }
 }
 
-fn unsetDefaultCompiler(allocator: Allocator, config: *const ZigupConfig) !void {
-    const link_path = try std.fmt.allocPrint(allocator, "{s}/default", .{config.path});
+fn unsetDefaultCompiler(config: *const ZigupConfig) !void {
+    std.posix.unlink(config.default_path) catch |err|
+        return if (err == error.FileNotFound) logw("no default compiler is set", .{}) else err;
 
-    try std.posix.unlink(link_path);
+    if (isBash()) {
+        logw("Use `hash -r` to reset the command location cache.", .{});
+    }
 }
 
 fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, config: *const ZigupConfig, verify_exists: bool) !void {
