@@ -5,7 +5,7 @@ const mem = std.mem;
 const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
 
-pub const std_options = .{
+pub const std_options: std.Options = .{
     .log_level = .info,
 };
 
@@ -179,10 +179,7 @@ fn help() void {
         \\  zigup fetch-index             download and print the download index json
         \\
         \\Common Options:
-        \\  --install-dir DIR             override the default install location
-        \\  --path-link PATH              path to the `zig` symlink that points to the default compiler
-        \\                                this will typically be a file path within a PATH directory so
-        \\                                that the user can just run `zig`
+        \\  --verbose | -v                output verbose information
         \\
     ) catch unreachable;
 }
