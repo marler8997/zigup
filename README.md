@@ -67,8 +67,8 @@ Zigup is currently built/tested using zig 0.13.0+.
 
 # TODO
 
-[ ] - Download to memory.
-[ ] - Use `std.tar` (Unix)
+- [ ] Download to memory
+- [ ] Use `std.tar` (Unix)
 
 # Dependencies
 

@@ -389,7 +389,7 @@ pub fn zigup() !u8 {
     // TODO: If the user removes `config.path` zigup will work while the shell
     // is up, we should assert that the env exist, possible creating it if it's
     // missing. This has the bonus of allowing the user to skip configuration
-    // with `ZIGUP_PATH="..." zigup ...`.
+    // dialog with `ZIGUP_PATH="..." zigup ...`.
 
     var args = if (args_array.len == 0) args_array else args_array[1..];
     // parse common options
