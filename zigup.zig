@@ -28,6 +28,7 @@ const archive_ext = if (builtin.os.tag == .windows) "zip" else "tar.xz";
 
 var global_optional_install_dir: ?[]const u8 = null;
 var global_optional_path_link: ?[]const u8 = null;
+var global_download_index_url: []const u8 = default_download_index_url;
 
 var global_enable_log = true;
 fn loginfo(comptime fmt: []const u8, args: anytype) void {
@@ -265,6 +266,8 @@ pub fn main2() !u8 {
                 if (!std.fs.path.isAbsolute(global_optional_path_link.?)) {
                     global_optional_path_link = try toAbsolute(allocator, global_optional_path_link.?);
                 }
+            } else if (std.mem.eql(u8, "--index", arg)) {
+                global_download_index_url = try getCmdOpt(args, &i);
             } else if (std.mem.eql(u8, "-h", arg) or std.mem.eql(u8, "--help", arg)) {
                 help();
                 return 0;
@@ -426,10 +429,11 @@ fn fetchCompiler(allocator: Allocator, version_arg: []const u8, set_default: Set
     //       this step for all other versions because the version to URL mapping is fixed (see getDefaultUrl)
     const is_master = std.mem.eql(u8, version_arg, "master");
     const version_url = blk: {
-        if (!is_master)
+        // For default index_url we can build the url so we avoid downloading the index
+        if (!is_master and std.mem.eql(u8, default_download_index_url, global_download_index_url))
             break :blk VersionUrl{ .version = version_arg, .url = try getDefaultUrl(allocator, version_arg) };
         optional_download_index = try fetchDownloadIndex(allocator);
-        const master = optional_download_index.?.json.value.object.get("master").?;
+        const master = optional_download_index.?.json.value.object.get(version_arg).?;
         const compiler_version = master.object.get("version").?.string;
         const master_linux = master.object.get(json_platform).?;
         const master_linux_tarball = master_linux.object.get("tarball").?.string;
@@ -454,7 +458,7 @@ fn fetchCompiler(allocator: Allocator, version_arg: []const u8, set_default: Set
     }
 }
 
-const download_index_url = "https://ziglang.org/download/index.json";
+const default_download_index_url = "https://ziglang.org/download/index.json";
 
 const DownloadIndex = struct {
     text: []u8,
@@ -466,10 +470,10 @@ const DownloadIndex = struct {
 };
 
 fn fetchDownloadIndex(allocator: Allocator) !DownloadIndex {
-    const text = switch (downloadToString(allocator, download_index_url)) {
+    const text = switch (downloadToString(allocator, global_download_index_url)) {
         .ok => |text| text,
         .err => |err| {
-            std.log.err("download '{s}' failed: {s}", .{ download_index_url, err });
+            std.log.err("download '{s}' failed: {s}", .{ global_download_index_url, err });
             return error.AlreadyReported;
         },
     };
