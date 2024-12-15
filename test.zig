@@ -348,7 +348,7 @@ pub fn main() !u8 {
     // NOTE: this test will eventually break when these builds are cleaned up,
     //       we should support downloading from bazel and use that instead since
     //       it should be more permanent
-    try runNoCapture(zigup_args ++ &[_][]const u8{"0.14.0-dev.1550+4fba7336a"});
+    try runNoCapture(zigup_args ++ &[_][]const u8{"0.14.0-dev.2465+70de2f3a7"});
 
     std.log.info("Success", .{});
     return 0;
