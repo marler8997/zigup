@@ -52,14 +52,17 @@ const DownloadResult = union(enum) {
 };
 fn download(allocator: Allocator, url: []const u8, writer: anytype) DownloadResult {
     const uri = std.Uri.parse(url) catch |err| std.debug.panic(
-        "failed to parse url '{s}' with {s}", .{url, @errorName(err)}
+        "failed to parse url '{s}' with {s}",
+        .{ url, @errorName(err) },
     );
 
     var client = std.http.Client{ .allocator = allocator };
     defer client.deinit();
 
     client.initDefaultProxies(allocator) catch |err| return .{ .err = std.fmt.allocPrint(
-        allocator, "failed to query the HTTP proxy settings with {s}", .{ @errorName(err) }
+        allocator,
+        "failed to query the HTTP proxy settings with {s}",
+        .{@errorName(err)},
     ) catch |e| oom(e) };
 
     var header_buffer: [4096]u8 = undefined;
@@ -67,16 +70,22 @@ fn download(allocator: Allocator, url: []const u8, writer: anytype) DownloadResu
         .server_header_buffer = &header_buffer,
         .keep_alive = false,
     }) catch |err| return .{ .err = std.fmt.allocPrint(
-        allocator, "failed to connect to the HTTP server with {s}", .{ @errorName(err) }
+        allocator,
+        "failed to connect to the HTTP server with {s}",
+        .{@errorName(err)},
     ) catch |e| oom(e) };
 
     defer request.deinit();
 
     request.send() catch |err| return .{ .err = std.fmt.allocPrint(
-        allocator, "failed to send the HTTP request with {s}", .{ @errorName(err) }
+        allocator,
+        "failed to send the HTTP request with {s}",
+        .{@errorName(err)},
     ) catch |e| oom(e) };
     request.wait() catch |err| return .{ .err = std.fmt.allocPrint(
-        allocator, "failed to read the HTTP response headers with {s}", .{ @errorName(err) }
+        allocator,
+        "failed to read the HTTP response headers with {s}",
+        .{@errorName(err)},
     ) catch |e| oom(e) };
 
     if (request.response.status != .ok) return .{ .err = std.fmt.allocPrint(
@@ -90,12 +99,16 @@ fn download(allocator: Allocator, url: []const u8, writer: anytype) DownloadResu
     var buf: [std.mem.page_size]u8 = undefined;
     while (true) {
         const len = request.reader().read(&buf) catch |err| return .{ .err = std.fmt.allocPrint(
-            allocator, "failed to read the HTTP response body with {s}'", .{ @errorName(err) }
+            allocator,
+            "failed to read the HTTP response body with {s}'",
+            .{@errorName(err)},
         ) catch |e| oom(e) };
         if (len == 0)
             return .ok;
         writer.writeAll(buf[0..len]) catch |err| return .{ .err = std.fmt.allocPrint(
-            allocator, "failed to write the HTTP response body with {s}'", .{ @errorName(err) }
+            allocator,
+            "failed to write the HTTP response body with {s}'",
+            .{@errorName(err)},
         ) catch |e| oom(e) };
     }
 }
@@ -103,7 +116,6 @@ fn download(allocator: Allocator, url: []const u8, writer: anytype) DownloadResu
 const DownloadStringResult = union(enum) {
     ok: []u8,
     err: []u8,
-
 };
 fn downloadToString(allocator: Allocator, url: []const u8) DownloadStringResult {
     var response_array_list = ArrayList(u8).initCapacity(allocator, 20 * 1024) catch |e| oom(e); // 20 KB (modify if response is expected to be bigger)
@@ -457,7 +469,7 @@ fn fetchDownloadIndex(allocator: Allocator) !DownloadIndex {
     const text = switch (downloadToString(allocator, download_index_url)) {
         .ok => |text| text,
         .err => |err| {
-            std.log.err("download '{s}' failed: {s}", .{download_index_url, err});
+            std.log.err("download '{s}' failed: {s}", .{ download_index_url, err });
             return error.AlreadyReported;
         },
     };
@@ -513,7 +525,7 @@ pub fn loggyUpdateSymlink(target_path: []const u8, sym_link_path: []const u8, fl
         error.NotLink => {
             std.debug.print(
                 "unable to update/overwrite the 'zig' PATH symlink, the file '{s}' already exists and is not a symlink\n",
-                .{ sym_link_path},
+                .{sym_link_path},
             );
             std.process.exit(1);
         },
@@ -932,7 +944,7 @@ fn createExeLink(link_target: []const u8, path_link: []const u8) !void {
         error.IsDir => {
             std.debug.print(
                 "unable to create the exe link, the path '{s}' is a directory\n",
-                .{ path_link},
+                .{path_link},
             );
             std.process.exit(1);
         },
@@ -985,7 +997,7 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
         }) {
             .ok => {},
             .err => |err| {
-                std.log.err("download '{s}' failed: {s}", .{url, err});
+                std.log.err("download '{s}' failed: {s}", .{ url, err });
                 // this removes the installing dir if the http request fails so we dont have random directories
                 try loggyDeleteTreeAbsolute(installing_dir);
                 return error.AlreadyReported;

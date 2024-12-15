@@ -15,7 +15,9 @@ fn usage() noreturn {
 }
 
 var windows_args_arena = if (builtin.os.tag == .windows)
-    std.heap.ArenaAllocator.init(std.heap.page_allocator) else struct{}{};
+    std.heap.ArenaAllocator.init(std.heap.page_allocator)
+else
+    struct {}{};
 pub fn cmdlineArgs() [][*:0]u8 {
     if (builtin.os.tag == .windows) {
         const slices = std.process.argsAlloc(windows_args_arena.allocator()) catch |err| switch (err) {
@@ -29,7 +31,7 @@ pub fn cmdlineArgs() [][*:0]u8 {
         }
         return args;
     }
-    return std.os.argv.ptr[1 .. std.os.argv.len];
+    return std.os.argv.ptr[1..std.os.argv.len];
 }
 
 pub fn main() !void {
@@ -55,7 +57,7 @@ pub fn main() !void {
                 fatal("unknown cmdline option '{s}'", .{arg});
             }
         }
-        break :blk cmd_args[0 .. non_option_len];
+        break :blk cmd_args[0..non_option_len];
     };
 
     if (cmd_args.len != 1) usage();
@@ -68,7 +70,7 @@ pub fn main() !void {
                     try std.fs.cwd().makePath(dir);
                     break :blk try std.fs.cwd().openDir(dir, .{});
                 },
-                else => fatal("failed to open output directory '{s}' with {s}", .{dir, @errorName(err)}),
+                else => fatal("failed to open output directory '{s}' with {s}", .{ dir, @errorName(err) }),
             };
         }
         break :blk std.fs.cwd();
@@ -76,7 +78,7 @@ pub fn main() !void {
     defer if (cmdline_opt.dir_arg) |_| out_dir.close();
 
     const zip_file = std.fs.cwd().openFile(zip_file_arg, .{}) catch |err|
-        fatal("open '{s}' failed: {s}", .{zip_file_arg, @errorName(err)});
+        fatal("open '{s}' failed: {s}", .{ zip_file_arg, @errorName(err) });
     defer zip_file.close();
     try std.zip.extract(out_dir, zip_file.seekableStream(), .{
         .allow_backslashes = true,

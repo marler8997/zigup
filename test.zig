@@ -49,13 +49,13 @@ pub fn main() !u8 {
     const bin_dir = try std.fs.path.join(allocator, &.{ test_dir, "bin" });
     try std.fs.cwd().makeDir(bin_dir);
     const install_sub_path = if (builtin.os.tag == .windows) "bin\\zig" else "install";
-    const install_dir = try std.fs.path.join(allocator, &.{test_dir, install_sub_path });
+    const install_dir = try std.fs.path.join(allocator, &.{ test_dir, install_sub_path });
     try std.fs.cwd().makeDir(install_dir);
 
     const zigup = try std.fs.path.join(allocator, &.{
         test_dir,
         "bin",
-        "zigup" ++ comptime builtin.target.exeFileExt()
+        "zigup" ++ comptime builtin.target.exeFileExt(),
     });
     try std.fs.cwd().copyFile(
         zigup_src_exe,
@@ -64,17 +64,17 @@ pub fn main() !u8 {
         .{},
     );
     if (builtin.os.tag == .windows) {
-        const zigup_src_pdb = try std.mem.concat(
-            allocator, u8, &.{ zigup_src_exe[0 .. zigup_src_exe.len-4], ".pdb" }
-        );
+        const zigup_src_pdb = try std.mem.concat(allocator, u8, &.{
+            zigup_src_exe[0 .. zigup_src_exe.len - 4],
+            ".pdb",
+        });
         defer allocator.free(zigup_src_pdb);
         const zigup_pdb = try std.fs.path.join(allocator, &.{ test_dir, "bin\\zigup.pdb" });
         defer allocator.free(zigup_pdb);
         try std.fs.cwd().copyFile(zigup_src_pdb, std.fs.cwd(), zigup_pdb, .{});
     }
 
-    const install_args = if (builtin.os.tag == .windows) [_][]const u8{
-    } else [_][]const u8{
+    const install_args = if (builtin.os.tag == .windows) [_][]const u8{} else [_][]const u8{
         "--install-dir", install_dir,
     };
     const zigup_args = &[_][]const u8{zigup} ++ install_args;
@@ -314,7 +314,7 @@ pub fn main() !u8 {
         {
             const fake_zig = try std.fs.path.join(allocator, &.{
                 bin2_dir,
-                "zig" ++ comptime builtin.target.exeFileExt()
+                "zig" ++ comptime builtin.target.exeFileExt(),
             });
             defer allocator.free(fake_zig);
             var file = try std.fs.cwd().createFile(fake_zig, .{});
@@ -348,7 +348,7 @@ pub fn main() !u8 {
     // NOTE: this test will eventually break when these builds are cleaned up,
     //       we should support downloading from bazel and use that instead since
     //       it should be more permanent
-    try runNoCapture(zigup_args ++ &[_][]const u8{ "0.14.0-dev.1550+4fba7336a" });
+    try runNoCapture(zigup_args ++ &[_][]const u8{"0.14.0-dev.1550+4fba7336a"});
 
     std.log.info("Success", .{});
     return 0;
