@@ -46,7 +46,7 @@ pub fn main() !u8 {
     global.child = std.process.Child.init(args, global.arena);
 
     if (0 == win32.SetConsoleCtrlHandler(consoleCtrlHandler, 1)) {
-        log.err("SetConsoleCtrlHandler failed, error={}", .{win32.GetLastError()});
+        log.err("SetConsoleCtrlHandler failed, error={}", .{@intFromEnum(win32.GetLastError())});
         return 0xff; // fail
     }
 
