@@ -19,18 +19,10 @@ pub fn build(b: *std.Build) !void {
     };
 
     const test_step = b.step("test", "test the executable");
-    {
-        const exe = b.addExecutable(.{
-            .name = "test",
-            .root_source_file = b.path("test.zig"),
-            .target = target,
-            .optimize = optimize,
-        });
-        const run_cmd = b.addRunArtifact(exe);
-        run_cmd.addArtifactArg(zigup_exe_native);
-        run_cmd.addDirectoryArg(b.path("scratch/native"));
-        test_step.dependOn(&run_cmd.step);
-    }
+
+    addTests(b, target, zigup_exe_native, test_step, .{
+        .make_build_steps = true,
+    });
 
     const unzip_step = b.step(
         "unzip",
@@ -74,7 +66,7 @@ pub fn build(b: *std.Build) !void {
     ci_step.dependOn(test_step);
     ci_step.dependOn(unzip_step);
     ci_step.dependOn(zip_step);
-    try ci(b, ci_step, test_step, host_zip_exe);
+    try ci(b, ci_step, host_zip_exe);
 }
 
 fn addZigupExe(
@@ -113,7 +105,6 @@ fn addZigupExe(
 fn ci(
     b: *std.Build,
     ci_step: *std.Build.Step,
-    test_step: *std.Build.Step,
     host_zip_exe: *std.Build.Step.Compile,
 ) !void {
     const ci_targets = [_][]const u8{
@@ -132,8 +123,6 @@ fn ci(
     const make_archive_step = b.step("archive", "Create CI archives");
     ci_step.dependOn(make_archive_step);
 
-    var previous_test_step = test_step;
-
     for (ci_targets) |ci_target_str| {
         const target = b.resolveTargetQuery(try std.Target.Query.parse(
             .{ .arch_os_abi = ci_target_str },
@@ -147,27 +136,17 @@ fn ci(
         });
         ci_step.dependOn(&zigup_exe_install.step);
 
-        const test_exe = b.addExecutable(.{
-            .name = b.fmt("test-{s}", .{ci_target_str}),
-            .root_source_file = b.path("test.zig"),
-            .target = target,
-            .optimize = optimize,
+        const target_test_step = b.step(b.fmt("test-{s}", .{ci_target_str}), "");
+        addTests(b, target, zigup_exe, target_test_step, .{
+            .make_build_steps = false,
+            // This doesn't seem to be working, so we're only adding these tests
+            // as a dependency if we see the arch is compatible beforehand
+            .failing_to_execute_foreign_is_an_error = false,
         });
-        const run_cmd = b.addRunArtifact(test_exe);
-        run_cmd.addArtifactArg(zigup_exe);
-        run_cmd.addDirectoryArg(b.path(b.fmt("scratch/{s}", .{ci_target_str})));
-
-        // This doesn't seem to be working, so I've added a pre-check below
-        run_cmd.failing_to_execute_foreign_is_an_error = false;
         const os_compatible = (builtin.os.tag == target.result.os.tag);
         const arch_compatible = (builtin.cpu.arch == target.result.cpu.arch);
         if (os_compatible and arch_compatible) {
-            ci_step.dependOn(&run_cmd.step);
-
-            // prevent tests from running at the same time so their output
-            // doesn't mangle each other.
-            run_cmd.step.dependOn(previous_test_step);
-            previous_test_step = &run_cmd.step;
+            ci_step.dependOn(target_test_step);
         }
 
         if (builtin.os.tag == .linux) {
@@ -219,3 +198,489 @@ fn makeCiArchiveStep(
     tar.step.dependOn(&exe_install.step);
     return &tar.step;
 }
+
+const SharedTestOptions = struct {
+    make_build_steps: bool,
+    failing_to_execute_foreign_is_an_error: bool = true,
+};
+fn addTests(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    zigup_exe: *std.Build.Step.Compile,
+    test_step: *std.Build.Step,
+    shared_options: SharedTestOptions,
+) void {
+    const runtest_exe = b.addExecutable(.{
+        .name = "runtest",
+        .root_source_file = b.path("runtest.zig"),
+        .target = target,
+    });
+    const tests: Tests = .{
+        .b = b,
+        .test_step = test_step,
+        .zigup_exe = zigup_exe,
+        .runtest_exe = runtest_exe,
+        .shared_options = shared_options,
+    };
+
+    tests.addWithClean(.{
+        .name = "test-usage-h",
+        .argv = &.{"-h"},
+        .check = .{ .expect_stderr_match = "Usage" },
+    });
+    tests.addWithClean(.{
+        .name = "test-usage-help",
+        .argv = &.{"--help"},
+        .check = .{ .expect_stderr_match = "Usage" },
+    });
+
+    tests.addWithClean(.{
+        .name = "test-fetch-index",
+        .argv = &.{"fetch-index"},
+        .checks = &.{
+            .{ .expect_stdout_match = "master" },
+            .{ .expect_stdout_match = "version" },
+            .{ .expect_stdout_match = "0.13.0" },
+        },
+    });
+
+    tests.addWithClean(.{
+        .name = "test-no-default",
+        .argv = &.{"default"},
+        .check = .{ .expect_stdout_exact = "<no-default>\n" },
+    });
+    tests.addWithClean(.{
+        .name = "test-default-master-not-fetched",
+        .argv = &.{ "default", "master" },
+        .check = .{ .expect_stderr_match = "master has not been fetched" },
+    });
+    tests.addWithClean(.{
+        .name = "test-default-0.7.0-not-fetched",
+        .argv = &.{ "default", "0.7.0" },
+        .check = .{ .expect_stderr_match = "error: compiler '0.7.0' is not installed\n" },
+    });
+
+    tests.addWithClean(.{
+        .name = "test-bad-version",
+        .argv = &.{ "THIS_ZIG_VERSION_DOES_NOT_EXIT" },
+        .checks = &.{
+            .{ .expect_stderr_match = "error: download '" },
+            .{ .expect_stderr_match = "' failed: " },
+        },
+    });
+
+    // NOTE: this test will eventually break when these builds are cleaned up,
+    //       we should support downloading from bazel and use that instead since
+    //       it should be more permanent
+    tests.addWithClean(.{
+        .name = "test-dev-version",
+        .argv = &.{ "0.14.0-dev.2465+70de2f3a7" },
+        .check = .{ .expect_stdout_exact = "" },
+    });
+
+    const _7 = tests.add(.{
+        .name = "test-7",
+        .argv = &.{"0.7.0"},
+        .check = .{ .expect_stdout_match = "" },
+    });
+    tests.addWithClean(.{
+        .name = "test-already-fetched-7",
+        .env = _7,
+        .argv = &.{ "fetch", "0.7.0" },
+        .check = .{ .expect_stderr_match = "already installed" },
+    });
+    tests.addWithClean(.{
+        .name = "test-get-default-7",
+        .env = _7,
+        .argv = &.{"default"},
+        .check = .{ .expect_stdout_exact = "0.7.0\n" },
+    });
+    tests.addWithClean(.{
+        .name = "test-get-default-7-no-path",
+        .env = _7,
+        .add_path = false,
+        .argv = &.{ "default", "0.7.0" },
+        .check = .{ .expect_stderr_match = " is not in PATH" },
+    });
+
+    // verify we print a nice error message if we can't update the symlink
+    // because it's a directory
+    tests.addWithClean(.{
+        .name = "test-get-default-7-path-link-is-directory",
+        .env = _7,
+        .setup_option = "path-link-is-directory",
+        .argv = &.{ "default", "0.7.0" },
+        .checks = switch (builtin.os.tag) {
+            .windows => &.{
+                .{ .expect_stderr_match = "unable to create the exe link, the path '" },
+                .{ .expect_stderr_match = "' is a directory" },
+            },
+            else => &.{
+                .{ .expect_stderr_match = "unable to update/overwrite the 'zig' PATH symlink, the file '" },
+                .{ .expect_stderr_match = "' already exists and is not a symlink" },
+            },
+        },
+    });
+
+    const _7_and_8 = tests.add(.{
+        .name = "test-fetch-8",
+        .env = _7,
+        .argv = &.{ "fetch", "0.8.0" },
+    });
+    tests.addWithClean(.{
+        .name = "test-get-default-7-after-fetch-8",
+        .env = _7_and_8,
+        .argv = &.{"default"},
+        .check = .{ .expect_stdout_exact = "0.7.0\n" },
+    });
+    tests.addWithClean(.{
+        .name = "test-already-fetched-8",
+        .env = _7_and_8,
+        .argv = &.{ "fetch", "0.8.0" },
+        .check = .{ .expect_stderr_match = "already installed" },
+    });
+    const _7_and_default_8 = tests.add(.{
+        .name = "test-set-default-8",
+        .env = _7_and_8,
+        .argv = &.{ "default", "0.8.0" },
+        .check = .{ .expect_stdout_exact = "" },
+    });
+    tests.addWithClean(.{
+        .name = "test-7-after-default-8",
+        .env = _7_and_default_8,
+        .argv = &.{"0.7.0"},
+        .check = .{ .expect_stdout_exact = "" },
+    });
+
+    const master_7_and_8 = tests.add(.{
+        .name = "test-master",
+        .env = _7_and_8,
+        .argv = &.{"master"},
+        .check = .{ .expect_stdout_exact = "" },
+    });
+    tests.addWithClean(.{
+        .name = "test-already-fetched-master",
+        .env = master_7_and_8,
+        .argv = &.{ "fetch", "master" },
+        .check = .{ .expect_stderr_match = "already installed" },
+    });
+
+    tests.addWithClean(.{
+        .name = "test-default-after-master",
+        .env = master_7_and_8,
+        .argv = &.{"default"},
+        // master version could be anything so we won't check
+    });
+    tests.addWithClean(.{
+        .name = "test-default-master",
+        .env = master_7_and_8,
+        .argv = &.{ "default", "master" },
+    });
+    tests.addWithClean(.{
+        .name = "test-default-not-in-path",
+        .add_path = false,
+        .env = master_7_and_8,
+        .argv = &.{ "default", "master" },
+        .check = .{ .expect_stderr_match = " is not in PATH" },
+    });
+
+    // verify that we get an error if there is another compiler in the path
+    tests.addWithClean(.{
+        .name = "test-default-master-with-another-zig",
+        .setup_option = "another-zig",
+        .env = master_7_and_8,
+        .argv = &.{ "default", "master" },
+        .checks = &.{
+            .{ .expect_stderr_match = "error: zig compiler '" },
+            .{ .expect_stderr_match = "' is higher priority in PATH than the path-link '" },
+        },
+    });
+
+    {
+        const default8 = tests.add(.{
+            .name = "test-default8-with-another-zig",
+            .setup_option = "another-zig",
+            .env = master_7_and_8,
+            .argv = &.{ "default", "0.8.0" },
+            .checks = &.{
+                .{ .expect_stderr_match = "error: zig compiler '" },
+                .{ .expect_stderr_match = "' is higher priority in PATH than the path-link '" },
+            },
+        });
+        // default compiler should still be set
+        tests.addWithClean(.{
+            .name = "test-default8-even-with-another-zig",
+            .env = default8,
+            .argv = &.{ "default" },
+            .check = .{ .expect_stdout_exact = "0.8.0\n" },
+        });
+    }
+
+    tests.addWithClean(.{
+        .name = "test-list",
+        .env = master_7_and_8,
+        .argv = &.{"list"},
+        .checks = &.{
+            .{ .expect_stdout_match = "0.7.0\n" },
+            .{ .expect_stdout_match = "0.8.0\n" },
+        },
+    });
+
+    {
+        const default_8 = tests.add(.{
+            .name = "test-8-with-master",
+            .env = master_7_and_8,
+            .argv = &.{"0.8.0"},
+            .check = .{ .expect_stdout_exact = "" },
+        });
+        tests.addWithClean(.{
+            .name = "test-default-8",
+            .env = default_8,
+            .argv = &.{"default"},
+            .check = .{ .expect_stdout_exact = "0.8.0\n" },
+        });
+    }
+
+    tests.addWithClean(.{
+        .name = "test-run-8",
+        .env = master_7_and_8,
+        .argv = &.{ "run", "0.8.0", "version" },
+        .check = .{ .expect_stdout_exact = "0.8.0\n" },
+    });
+    tests.addWithClean(.{
+        .name = "test-run-doesnotexist",
+        .env = master_7_and_8,
+        .argv = &.{ "run", "doesnotexist", "version" },
+        .check = .{ .expect_stderr_exact = "error: compiler 'doesnotexist' does not exist, fetch it first with: zigup fetch doesnotexist\n" },
+    });
+
+
+    tests.addWithClean(.{
+        .name = "test-clean-default-master",
+        .env = master_7_and_8,
+        .argv = &.{"clean"},
+        .checks = &.{
+            .{ .expect_stderr_match = "keeping '" },
+            .{ .expect_stderr_match = "' (is default compiler)\n" },
+            .{ .expect_stderr_match = "deleting '" },
+            .{ .expect_stderr_match = "0.7.0'\n" },
+            .{ .expect_stderr_match = "0.8.0'\n" },
+            .{ .expect_stdout_exact = "" },
+        },
+    });
+
+    {
+        const default7 = tests.add(.{
+            .name = "test-set-default-7",
+            .env = master_7_and_8,
+            .argv = &.{ "default", "0.7.0" },
+            .checks = &.{
+                .{ .expect_stdout_exact = "" },
+            },
+        });
+        tests.addWithClean(.{
+            .name = "test-clean-default-7",
+            .env = default7,
+            .argv = &.{"clean"},
+            .checks = &.{
+                .{ .expect_stderr_match = "keeping '" },
+                .{ .expect_stderr_match = "' (it is master)\n" },
+                .{ .expect_stderr_match = "keeping '0.7.0' (is default compiler)\n" },
+                .{ .expect_stderr_match = "deleting '" },
+                .{ .expect_stderr_match = "0.8.0'\n" },
+                .{ .expect_stdout_exact = "" },
+            },
+        });
+    }
+
+    {
+        const keep8 = tests.add(.{
+            .name = "test-keep8",
+            .env = master_7_and_8,
+            .argv = &.{ "keep", "0.8.0" },
+            .check = .{ .expect_stdout_exact = "" },
+        });
+
+        {
+            const keep8_default_7 = tests.add(.{
+                .name = "test-set-default-7-keep8",
+                .env = keep8,
+                .argv = &.{ "default", "0.7.0" },
+                .checks = &.{
+                    .{ .expect_stdout_exact = "" },
+                },
+            });
+            tests.addWithClean(.{
+                .name = "test-clean-default-7-keep8",
+                .env = keep8_default_7,
+                .argv = &.{"clean"},
+                .checks = &.{
+                    .{ .expect_stderr_match = "keeping '" },
+                    .{ .expect_stderr_match = "' (it is master)\n" },
+                    .{ .expect_stderr_match = "keeping '0.7.0' (is default compiler)\n" },
+                    .{ .expect_stderr_match = "keeping '0.8.0' (has keep file)\n" },
+                    .{ .expect_stdout_exact = "" },
+                },
+            });
+            tests.addWithClean(.{
+                .name = "test-clean-master",
+                .env = keep8_default_7,
+                .argv = &.{"clean", "master"},
+                .checks = &.{
+                    .{ .expect_stderr_match = "deleting '" },
+                    .{ .expect_stderr_match = "master'\n" },
+                    .{ .expect_stdout_exact = "" },
+                },
+            });
+        }
+
+        const after_clean = tests.add(.{
+            .name = "test-clean-keep8",
+            .env = keep8,
+            .argv = &.{"clean"},
+            .checks = &.{
+                .{ .expect_stderr_match = "keeping '" },
+                .{ .expect_stderr_match = "' (is default compiler)\n" },
+                .{ .expect_stderr_match = "keeping '0.8.0' (has keep file)\n" },
+                .{ .expect_stderr_match = "deleting '" },
+                .{ .expect_stderr_match = "0.7.0'\n" },
+            },
+        });
+
+        tests.addWithClean(.{
+            .name = "test-set-default-7-after-clean",
+            .env = after_clean,
+            .argv = &.{ "default", "0.7.0" },
+            .checks = &.{
+                .{ .expect_stderr_match = "error: compiler '0.7.0' is not installed\n" },
+            },
+        });
+
+        const default8 = tests.add(.{
+            .name = "test-set-default-8-after-clean",
+            .env = after_clean,
+            .argv = &.{ "default", "0.8.0" },
+            .checks = &.{
+                .{ .expect_stdout_exact = "" },
+            },
+        });
+
+
+        tests.addWithClean(.{
+            .name = "test-clean8-as-default",
+            .env = default8,
+            .argv = &.{ "clean", "0.8.0" },
+            .checks = &.{
+                .{ .expect_stderr_match = "error: cannot clean '0.8.0' (is default compiler)\n" },
+            },
+        });
+
+        const after_clean8 = tests.add(.{
+            .name = "test-clean8",
+            .env = after_clean,
+            .argv = &.{ "clean", "0.8.0" },
+            .checks = &.{
+                .{ .expect_stderr_match = "deleting '" },
+                .{ .expect_stderr_match = "0.8.0'\n" },
+                .{ .expect_stdout_exact = "" },
+            },
+        });
+        tests.addWithClean(.{
+            .name = "test-clean-after-clean8",
+            .env = after_clean8,
+            .argv = &.{"clean"},
+            .checks = &.{
+                .{ .expect_stderr_match = "keeping '" },
+                .{ .expect_stderr_match = "' (is default compiler)\n" },
+                .{ .expect_stdout_exact = "" },
+            },
+        });
+    }
+}
+
+const native_exe_ext = builtin.os.tag.exeFileExt(builtin.cpu.arch);
+
+const TestOptions = struct {
+    name: []const u8,
+    add_path: bool = true,
+    env: ?std.Build.LazyPath = null,
+    setup_option: []const u8 = "no-extra-setup",
+    argv: []const []const u8,
+    check: ?std.Build.Step.Run.StdIo.Check = null,
+    checks: []const std.Build.Step.Run.StdIo.Check = &.{},
+};
+
+const Tests = struct {
+    b: *std.Build,
+    test_step: *std.Build.Step,
+    zigup_exe: *std.Build.Step.Compile,
+    runtest_exe: *std.Build.Step.Compile,
+    shared_options: SharedTestOptions,
+
+    fn addWithClean(tests: Tests, opt: TestOptions) void {
+        _  = tests.addCommon(opt, .yes_clean);
+    }
+    fn add(tests: Tests, opt: TestOptions) std.Build.LazyPath {
+        return tests.addCommon(opt, .no_clean);
+    }
+    fn addCommon(tests: Tests, opt: TestOptions, clean_opt: enum { no_clean, yes_clean }) std.Build.LazyPath {
+        const b = tests.b;
+        const run = std.Build.Step.Run.create(b, b.fmt("run {s}", .{opt.name}));
+        run.failing_to_execute_foreign_is_an_error = tests.shared_options.failing_to_execute_foreign_is_an_error;
+        run.addArtifactArg(tests.runtest_exe);
+        run.addArg(opt.name);
+        run.addArg(if (opt.add_path) "--with-path" else "--no-path");
+        if (opt.env) |env| {
+            run.addDirectoryArg(env);
+        } else {
+            run.addArg("--no-input-environment");
+        }
+        const out_env = run.addOutputDirectoryArg(opt.name);
+        run.addArg(opt.setup_option);
+        run.addFileArg(tests.zigup_exe.getEmittedBin());
+        run.addArgs(opt.argv);
+        if (opt.check) |check| {
+            run.addCheck(check);
+        }
+        for (opt.checks) |check| {
+            run.addCheck(check);
+        }
+
+        const test_step: *std.Build.Step = switch (clean_opt) {
+            .no_clean => &run.step,
+            .yes_clean => &CleanDir.create(tests.b, out_env).step,
+        };
+
+        if (tests.shared_options.make_build_steps) {
+            b.step(opt.name, "").dependOn(test_step);
+        }
+        tests.test_step.dependOn(test_step);
+
+        return out_env;
+    }
+};
+
+const CleanDir = struct {
+    step: std.Build.Step,
+    dir_path: std.Build.LazyPath,
+    pub fn create(owner: *std.Build, path: std.Build.LazyPath) *CleanDir {
+        const clean_dir = owner.allocator.create(CleanDir) catch @panic("OOM");
+        clean_dir.* = .{
+            .step = std.Build.Step.init(.{
+                .id = .custom,
+                .name = owner.fmt("CleanDir {s}", .{path.getDisplayName()}),
+                .owner = owner,
+                .makeFn = make,
+            }),
+            .dir_path = path.dupe(owner),
+        };
+        path.addStepDependencies(&clean_dir.step);
+        return clean_dir;
+    }
+    fn make(step: *std.Build.Step, prog_node: std.Progress.Node) !void {
+        _ = prog_node;
+        const b = step.owner;
+        const clean_dir: *CleanDir = @fieldParentPtr("step", step);
+        try b.build_root.handle.deleteTree(clean_dir.dir_path.getPath(b));
+    }
+};

@@ -8,7 +8,7 @@
         "build.zig",
         "build.zig.zon",
         "fixdeletetree.zig",
-        "test.zig",
+        "runtest.zig",
         "win32exelink.zig",
         "zigup.zig",
     },
