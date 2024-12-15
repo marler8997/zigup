@@ -736,7 +736,10 @@ fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, exist_veri
     const path_link = try makeZigPathLinkString(allocator);
     defer allocator.free(path_link);
 
-    const link_target = try std.fs.path.join(allocator, &[_][]const u8{ compiler_dir, "files", comptime "zig" ++ builtin.target.exeFileExt() });
+    const link_target = try std.fs.path.join(
+        allocator,
+        &[_][]const u8{ compiler_dir, "files", comptime "zig" ++ builtin.target.exeFileExt() },
+    );
     defer allocator.free(link_target);
     if (builtin.os.tag == .windows) {
         try createExeLink(link_target, path_link);
