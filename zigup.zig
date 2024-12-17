@@ -14,6 +14,7 @@ const arch = switch (builtin.cpu.arch) {
     .riscv64 => "riscv64",
     .powerpc64le => "powerpc64le",
     .powerpc => "powerpc",
+    .x86 => "x86",
     else => @compileError("Unsupported CPU Architecture"),
 };
 const os = switch (builtin.os.tag) {
