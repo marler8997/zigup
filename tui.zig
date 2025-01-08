@@ -9,7 +9,18 @@ fn compareStrings(_: void, lhs: []const u8, rhs: []const u8) bool {
     return std.mem.order(u8, lhs, rhs).compare(std.math.CompareOperator.gt);
 }
 
-pub fn tui(allocator: std.mem.Allocator, compilers: [][]u8, default_compiler: ?[]const u8) !void {
+pub const Command = union(enum) {
+    default: []const u8,
+    clean: []const u8,
+    exit: void,
+};
+
+const Event = union(enum) {
+    key_press: vaxis.Key,
+    winsize: vaxis.Winsize,
+};
+
+pub fn tui(allocator: std.mem.Allocator, compilers: [][]u8, default_compiler: ?[]const u8) !Command {
     std.mem.sort([]const u8, compilers, {}, compareStrings);
 
     var tty = try vaxis.Tty.init();
@@ -56,10 +67,10 @@ pub fn tui(allocator: std.mem.Allocator, compilers: [][]u8, default_compiler: ?[
                     }
                 }
                 if (key.codepoint == 'd') {
-                    // todo set default compiler
+                    return Command{ .default = compilers[selected_idx] };
                 }
                 if (key.codepoint == 'c') {
-                    // todo clean compiler
+                    return Command{ .clean = compilers[selected_idx] };
                 }
                 if (key.codepoint == 'q') {
                     break;
@@ -114,9 +125,5 @@ pub fn tui(allocator: std.mem.Allocator, compilers: [][]u8, default_compiler: ?[
         }
         try vx.render(tty.anyWriter());
     }
+    return .exit;
 }
-
-const Event = union(enum) {
-    key_press: vaxis.Key,
-    winsize: vaxis.Winsize,
-};

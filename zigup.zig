@@ -292,10 +292,19 @@ pub fn main2() !u8 {
             std.log.err("'tui' command requires 0 arguments but got {d}", .{args.len - 1});
             return 1;
         }
-        const compilers = try listCompilers(allocator);
-        const default_compiler = try getDefaultCompiler(allocator);
-        std.log.debug("default: {any}", .{default_compiler});
-        try tui.tui(allocator, compilers, default_compiler);
+
+        while (true) {
+            const command = try runTui(allocator);
+            switch (command) {
+                .exit => return 0,
+                .default => |compiler| {
+                    std.log.debug("setting default compiler {s}\r\n", .{compiler});
+                },
+                .clean => |compiler| {
+                    std.log.debug("cleaning compiler {s}\r\n", .{compiler});
+                },
+            }
+        }
         return 0;
     }
     if (std.mem.eql(u8, "fetch-index", args[0])) {
@@ -388,6 +397,12 @@ pub fn main2() !u8 {
     return 1;
 
     //const optionalInstallPath = try find_zigs(allocator);
+}
+
+fn runTui(allocator: Allocator) !tui.Command {
+    const compilers = try listCompilers(allocator);
+    const default_compiler = try getDefaultCompiler(allocator);
+    return try tui.tui(allocator, compilers, default_compiler);
 }
 
 pub fn runCompiler(allocator: Allocator, args: []const []const u8) !u8 {
