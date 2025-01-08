@@ -89,12 +89,18 @@ fn addZigupExe(
         break :blk null;
     };
 
+    const vaxis_dep = b.dependency("vaxis", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const exe = b.addExecutable(.{
         .name = "zigup",
         .root_source_file = b.path("zigup.zig"),
         .target = target,
         .optimize = optimize,
     });
+    exe.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
 
     if (target.result.os.tag == .windows) {
         exe.root_module.addImport("win32exelink", win32exelink_mod.?);
@@ -262,7 +268,7 @@ fn addTests(
 
     tests.addWithClean(.{
         .name = "test-bad-version",
-        .argv = &.{ "THIS_ZIG_VERSION_DOES_NOT_EXIT" },
+        .argv = &.{"THIS_ZIG_VERSION_DOES_NOT_EXIT"},
         .checks = &.{
             .{ .expect_stderr_match = "error: download '" },
             .{ .expect_stderr_match = "' failed: " },
@@ -274,7 +280,7 @@ fn addTests(
     //       it should be more permanent
     tests.addWithClean(.{
         .name = "test-dev-version",
-        .argv = &.{ "0.14.0-dev.2465+70de2f3a7" },
+        .argv = &.{"0.14.0-dev.2465+70de2f3a7"},
         .check = .{ .expect_stdout_exact = "" },
     });
 
@@ -411,7 +417,7 @@ fn addTests(
         tests.addWithClean(.{
             .name = "test-default8-even-with-another-zig",
             .env = default8,
-            .argv = &.{ "default" },
+            .argv = &.{"default"},
             .check = .{ .expect_stdout_exact = "0.8.0\n" },
         });
     }
@@ -453,7 +459,6 @@ fn addTests(
         .argv = &.{ "run", "doesnotexist", "version" },
         .check = .{ .expect_stderr_exact = "error: compiler 'doesnotexist' does not exist, fetch it first with: zigup fetch doesnotexist\n" },
     });
-
 
     tests.addWithClean(.{
         .name = "test-clean-default-master",
@@ -525,7 +530,7 @@ fn addTests(
             tests.addWithClean(.{
                 .name = "test-clean-master",
                 .env = keep8_default_7,
-                .argv = &.{"clean", "master"},
+                .argv = &.{ "clean", "master" },
                 .checks = &.{
                     .{ .expect_stderr_match = "deleting '" },
                     .{ .expect_stderr_match = "master'\n" },
@@ -564,7 +569,6 @@ fn addTests(
                 .{ .expect_stdout_exact = "" },
             },
         });
-
 
         tests.addWithClean(.{
             .name = "test-clean8-as-default",
@@ -618,7 +622,7 @@ const Tests = struct {
     shared_options: SharedTestOptions,
 
     fn addWithClean(tests: Tests, opt: TestOptions) void {
-        _  = tests.addCommon(opt, .yes_clean);
+        _ = tests.addCommon(opt, .yes_clean);
     }
     fn add(tests: Tests, opt: TestOptions) std.Build.LazyPath {
         return tests.addCommon(opt, .no_clean);
