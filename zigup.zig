@@ -299,11 +299,11 @@ pub fn main2() !u8 {
                 .exit => return 0,
                 .default => |compiler| {
                     try setDefaultCompilerVersion(allocator, compiler);
-                    std.log.debug("setting default compiler {s}\r\n", .{compiler});
+                    std.debug.print("setting default compiler {s}\r\n", .{compiler});
                 },
                 .clean => |compiler| {
-                    // TODO
-                    std.log.debug("cleaning compiler {s}\r\n", .{compiler});
+                    try try cleanCompilers(allocator, compiler);
+                    std.debug.print("cleaning compiler {s}\r\n", .{compiler});
                 },
             }
         }
