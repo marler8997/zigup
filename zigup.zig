@@ -302,7 +302,7 @@ pub fn main2() !u8 {
                     std.debug.print("setting default compiler {s}\r\n", .{compiler});
                 },
                 .clean => |compiler| {
-                    try try cleanCompilers(allocator, compiler);
+                    try cleanCompilers(allocator, compiler);
                     std.debug.print("cleaning compiler {s}\r\n", .{compiler});
                 },
             }
