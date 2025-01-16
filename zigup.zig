@@ -877,7 +877,10 @@ const FileId = struct {
         if (builtin.os.tag == .windows) {
             var info: win32.BY_HANDLE_FILE_INFORMATION = undefined;
             if (0 == win32.GetFileInformationByHandle(file.handle, &info)) {
-                std.log.err("GetFileInformationByHandle on '{s}' failed, error={}", .{ filename_for_error, std.os.windows.kernel32.GetLastError() });
+                std.log.err(
+                    "GetFileInformationByHandle on '{s}' failed, error={}",
+                    .{ filename_for_error, @intFromEnum(std.os.windows.kernel32.GetLastError()) },
+                );
                 return error.AlreadyReported;
             }
             return FileId{
