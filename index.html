@@ -146,11 +146,13 @@ function copyToClipboard(text) {
   var include_curl = true;
   var include_wget = true;
   var include_homebrew = false;
+  var include_powershell = false;
 
   function updateInstallDiv() {
       var arch_os = null;
       var archive_ext = null;
       include_homebrew = false;
+      include_powershell = false;
       if (current_os == OS_LINUX) {
           archive_ext = ".tar.gz";
           if (current_arch == ARCH_X86_64) {
@@ -169,6 +171,7 @@ function copyToClipboard(text) {
       } else if (current_os == OS_WINDOWS) {
           archive_ext = ".zip";
           if (current_arch == ARCH_X86_64) {
+              include_powershell = true;
               arch_os = "x86_64-windows";
           }
       }
@@ -191,6 +194,9 @@ function copyToClipboard(text) {
           }
           if (include_wget) {
               html += generateCommandHtml(ids, 'wget -O - ' + archive_url + ' | tar xz');
+          }
+          if (include_powershell) {
+              html += generateCommandHtml(ids, "Invoke-WebRequest -Uri " + archive_url + " -OutFile \"zigup-"  + arch_os + ".zip\"; Expand-Archive -Path \"zigup-" + arch_os + ".zip\" -DestinationPath \"zigup-" + version + "\"");
           }
           html += "</div></section>";
       }
