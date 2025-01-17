@@ -14,7 +14,18 @@ body {
 a { color: #eee }
 h1 { color:#eee }
 h2 { color:#eee }
-pre { font-family: courier new }
+section {
+    display: grid;
+    justify-items: center;
+    align-items: center;
+}
+code {
+    padding: 0.75em;
+    font-family: courier new;
+    text-align: left;
+    word-wrap: break-word;
+    background: #111;
+}
 
 #InstallDiv {
     margin:10px;
@@ -49,6 +60,18 @@ pre { font-family: courier new }
 .FilterButtonEnabled:hover {
   background:#3277e5;
 }
+
+.Commands {
+  display: grid;
+  gap: 1em;
+  grid-auto-rows: 5em;
+}
+.Commands div {
+  display: grid;
+  gap: 3em;
+  grid-template-columns: 10em 45em;
+}
+
 </style>
 <script>
 
@@ -77,7 +100,7 @@ function copyToClipboard(text) {
       return (
           '<div>' +
               '<button class="CopyButton" onclick="copyCommand(' + id + ')">Copy</button> ' +
-              '<pre style="display:inline-block" id="command' + id + '">' + cmd + '</pre>' +
+              '<code style="display:inline-block" id="command' + id + '">' + cmd + '</code>' +
           '</div>'
       );
   }
@@ -155,6 +178,7 @@ function copyToClipboard(text) {
           html += '<br/><h2 style="margin:15px"><a href="' + archive_url + '">' + basename + '</a></h2>';
 
           html += '<br/><h2>Command Line Install:</h2>';
+          html += "<section><div class='Commands'>";
           var ids = { next_id: 0 };
           if (include_curl) {
               html += generateCommandHtml(ids, 'curl -L ' + archive_url + ' | tar xz');
@@ -162,6 +186,7 @@ function copyToClipboard(text) {
           if (include_wget) {
               html += generateCommandHtml(ids, 'wget -O - ' + archive_url + ' | tar xz');
           }
+          html += "</div></section>";
       }
       get('InstallDiv').innerHTML = html;
   }
