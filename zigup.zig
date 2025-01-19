@@ -52,10 +52,11 @@ const DownloadResult = union(enum) {
     }
 };
 fn download(allocator: Allocator, url: []const u8, writer: anytype) DownloadResult {
-    const uri = std.Uri.parse(url) catch |err| std.debug.panic(
-        "failed to parse url '{s}' with {s}",
-        .{ url, @errorName(err) },
-    );
+    const uri = std.Uri.parse(url) catch |err| return .{ .err = std.fmt.allocPrint(
+        allocator,
+        "the URL is invalid ({s})",
+        .{@errorName(err)},
+    ) catch |e| oom(e) };
 
     var client = std.http.Client{ .allocator = allocator };
     defer client.deinit();
