@@ -145,10 +145,12 @@ function copyToClipboard(text) {
   var current_arch = -1;
   var include_curl = true;
   var include_wget = true;
+  var include_homebrew = false;
 
   function updateInstallDiv() {
       var arch_os = null;
       var archive_ext = null;
+      include_homebrew = false;
       if (current_os == OS_LINUX) {
           archive_ext = ".tar.gz";
           if (current_arch == ARCH_X86_64) {
@@ -157,6 +159,7 @@ function copyToClipboard(text) {
               arch_os = "aarch64-linux";
           }
       } else if (current_os == OS_MACOS) {
+          include_homebrew = true;
           archive_ext = ".tar.gz";
           if (current_arch == ARCH_X86_64) {
               arch_os = "x86_64-macos";
@@ -180,6 +183,9 @@ function copyToClipboard(text) {
           html += '<br/><h2>Command Line Install:</h2>';
           html += "<section><div class='Commands'>";
           var ids = { next_id: 0 };
+          if (include_homebrew) {
+              html += generateCommandHtml(ids, "brew install zigup");
+          }
           if (include_curl) {
               html += generateCommandHtml(ids, 'curl -L ' + archive_url + ' | tar xz');
           }
