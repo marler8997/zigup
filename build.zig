@@ -245,6 +245,14 @@ fn addTests(
     });
 
     tests.addWithClean(.{
+        .name = "test-invalid-fetch-index-url",
+        .argv = &.{ "fetch-index", "--index", "this-is-not-a-valid-url" },
+        .checks = &.{
+            .{ .expect_stderr_match = "error: download 'this-is-not-a-valid-url' failed: the URL is invalid (InvalidFormat)" },
+        },
+    });
+
+    tests.addWithClean(.{
         .name = "test-no-default",
         .argv = &.{"default"},
         .check = .{ .expect_stdout_exact = "<no-default>\n" },
