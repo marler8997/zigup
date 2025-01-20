@@ -245,10 +245,18 @@ fn addTests(
     });
 
     tests.addWithClean(.{
-        .name = "test-invalid-fetch-index-url",
+        .name = "test-invalid-index-url",
         .argv = &.{ "fetch-index", "--index", "this-is-not-a-valid-url" },
         .checks = &.{
-            .{ .expect_stderr_match = "error: download 'this-is-not-a-valid-url' failed: the URL is invalid (InvalidFormat)" },
+            .{ .expect_stderr_match = "error: could not download 'this-is-not-a-valid-url': the URL is invalid (InvalidFormat)" },
+        },
+    });
+
+    tests.addWithClean(.{
+        .name = "test-invalid-index-content",
+        .argv = &.{ "fetch-index", "--index", "https://ziglang.org" },
+        .checks = &.{
+            .{ .expect_stderr_match = "failed to parse JSON content from index url 'https://ziglang.org' with " },
         },
     });
 
@@ -272,8 +280,7 @@ fn addTests(
         .name = "test-bad-version",
         .argv = &.{"THIS_ZIG_VERSION_DOES_NOT_EXIT"},
         .checks = &.{
-            .{ .expect_stderr_match = "error: download '" },
-            .{ .expect_stderr_match = "' failed: " },
+            .{ .expect_stderr_match = "error: could not download '" },
         },
     });
 

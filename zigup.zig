@@ -28,7 +28,6 @@ const archive_ext = if (builtin.os.tag == .windows) "zip" else "tar.xz";
 
 var global_optional_install_dir: ?[]const u8 = null;
 var global_optional_path_link: ?[]const u8 = null;
-var global_download_index_url: []const u8 = default_download_index_url;
 
 var global_enable_log = true;
 fn loginfo(comptime fmt: []const u8, args: anytype) void {
@@ -92,7 +91,7 @@ fn download(allocator: Allocator, url: []const u8, writer: anytype) DownloadResu
 
     if (request.response.status != .ok) return .{ .err = std.fmt.allocPrint(
         allocator,
-        "HTTP server replied with unsuccessful response '{d} {s}'",
+        "the HTTP server replied with unsuccessful response '{d} {s}'",
         .{ @intFromEnum(request.response.status), request.response.status.phrase() orelse "" },
     ) catch |e| oom(e) };
 
@@ -218,6 +217,10 @@ fn help() void {
         \\  --path-link PATH              path to the `zig` symlink that points to the default compiler
         \\                                this will typically be a file path within a PATH directory so
         \\                                that the user can just run `zig`
+        \\  --index                       override the default index URL that zig versions/URLs are fetched from.
+        \\                                default:
+    ++ " " ++ default_index_url ++
+        \\
         \\
     ) catch unreachable;
 }
@@ -251,7 +254,9 @@ pub fn main2() !u8 {
 
     var args = if (args_array.len == 0) args_array else args_array[1..];
     // parse common options
-    //
+
+    var index_url: []const u8 = default_index_url;
+
     {
         var i: usize = 0;
         var newlen: usize = 0;
@@ -268,7 +273,7 @@ pub fn main2() !u8 {
                     global_optional_path_link = try toAbsolute(allocator, global_optional_path_link.?);
                 }
             } else if (std.mem.eql(u8, "--index", arg)) {
-                global_download_index_url = try getCmdOpt(args, &i);
+                index_url = try getCmdOpt(args, &i);
             } else if (std.mem.eql(u8, "-h", arg) or std.mem.eql(u8, "--help", arg)) {
                 help();
                 return 0;
@@ -291,7 +296,7 @@ pub fn main2() !u8 {
             std.log.err("'index' command requires 0 arguments but got {d}", .{args.len - 1});
             return 1;
         }
-        var download_index = try fetchDownloadIndex(allocator);
+        var download_index = try fetchDownloadIndex(allocator, index_url);
         defer download_index.deinit(allocator);
         try std.io.getStdOut().writeAll(download_index.text);
         return 0;
@@ -301,7 +306,7 @@ pub fn main2() !u8 {
             std.log.err("'fetch' command requires 1 argument but got {d}", .{args.len - 1});
             return 1;
         }
-        try fetchCompiler(allocator, args[1], .leave_default);
+        try fetchCompiler(allocator, index_url, args[1], .leave_default);
         return 0;
     }
     if (std.mem.eql(u8, "clean", args[0])) {
@@ -367,7 +372,7 @@ pub fn main2() !u8 {
         return 1;
     }
     if (args.len == 1) {
-        try fetchCompiler(allocator, args[0], .set_default);
+        try fetchCompiler(allocator, index_url, args[0], .set_default);
         return 0;
     }
     const command = args[0];
@@ -414,7 +419,12 @@ pub fn runCompiler(allocator: Allocator, args: []const []const u8) !u8 {
 
 const SetDefault = enum { set_default, leave_default };
 
-fn fetchCompiler(allocator: Allocator, version_arg: []const u8, set_default: SetDefault) !void {
+fn fetchCompiler(
+    allocator: Allocator,
+    index_url: []const u8,
+    version_arg: []const u8,
+    set_default: SetDefault,
+) !void {
     const install_dir = try getInstallDir(allocator, .{ .create = true });
     defer allocator.free(install_dir);
 
@@ -431,9 +441,9 @@ fn fetchCompiler(allocator: Allocator, version_arg: []const u8, set_default: Set
     const is_master = std.mem.eql(u8, version_arg, "master");
     const version_url = blk: {
         // For default index_url we can build the url so we avoid downloading the index
-        if (!is_master and std.mem.eql(u8, default_download_index_url, global_download_index_url))
+        if (!is_master and std.mem.eql(u8, default_index_url, index_url))
             break :blk VersionUrl{ .version = version_arg, .url = try getDefaultUrl(allocator, version_arg) };
-        optional_download_index = try fetchDownloadIndex(allocator);
+        optional_download_index = try fetchDownloadIndex(allocator, index_url);
         const master = optional_download_index.?.json.value.object.get(version_arg).?;
         const compiler_version = master.object.get("version").?.string;
         const master_linux = master.object.get(json_platform).?;
@@ -459,7 +469,7 @@ fn fetchCompiler(allocator: Allocator, version_arg: []const u8, set_default: Set
     }
 }
 
-const default_download_index_url = "https://ziglang.org/download/index.json";
+const default_index_url = "https://ziglang.org/download/index.json";
 
 const DownloadIndex = struct {
     text: []u8,
@@ -470,16 +480,22 @@ const DownloadIndex = struct {
     }
 };
 
-fn fetchDownloadIndex(allocator: Allocator) !DownloadIndex {
-    const text = switch (downloadToString(allocator, global_download_index_url)) {
+fn fetchDownloadIndex(allocator: Allocator, index_url: []const u8) !DownloadIndex {
+    const text = switch (downloadToString(allocator, index_url)) {
         .ok => |text| text,
         .err => |err| {
-            std.log.err("download '{s}' failed: {s}", .{ global_download_index_url, err });
+            std.log.err("could not download '{s}': {s}", .{ index_url, err });
             return error.AlreadyReported;
         },
     };
     errdefer allocator.free(text);
-    var json = try std.json.parseFromSlice(std.json.Value, allocator, text, .{});
+    var json = std.json.parseFromSlice(std.json.Value, allocator, text, .{}) catch |e| {
+        std.log.err(
+            "failed to parse JSON content from index url '{s}' with {s}",
+            .{ index_url, @errorName(e) },
+        );
+        return error.AlreadyReported;
+    };
     errdefer json.deinit();
     return DownloadIndex{ .text = text, .json = json };
 }
@@ -1008,7 +1024,7 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
         }) {
             .ok => {},
             .err => |err| {
-                std.log.err("download '{s}' failed: {s}", .{ url, err });
+                std.log.err("could not download '{s}': {s}", .{ url, err });
                 // this removes the installing dir if the http request fails so we dont have random directories
                 try loggyDeleteTreeAbsolute(installing_dir);
                 return error.AlreadyReported;
