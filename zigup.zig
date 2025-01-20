@@ -120,7 +120,7 @@ const DownloadStringResult = union(enum) {
     err: []u8,
 };
 fn downloadToString(allocator: Allocator, url: []const u8) DownloadStringResult {
-    var response_array_list = ArrayList(u8).initCapacity(allocator, 20 * 1024) catch |e| oom(e); // 20 KB (modify if response is expected to be bigger)
+    var response_array_list = ArrayList(u8).initCapacity(allocator, 50 * 1024) catch |e| oom(e); // 50 KB (modify if response is expected to be bigger)
     defer response_array_list.deinit();
     switch (download(allocator, url, response_array_list.writer())) {
         .ok => return .{ .ok = response_array_list.toOwnedSlice() catch |e| oom(e) },
