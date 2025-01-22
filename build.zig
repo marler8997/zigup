@@ -89,12 +89,18 @@ fn addZigupExe(
         break :blk null;
     };
 
+    const vaxis_dep = b.dependency("vaxis", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const exe = b.addExecutable(.{
         .name = "zigup",
         .root_source_file = b.path("zigup.zig"),
         .target = target,
         .optimize = optimize,
     });
+    exe.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
 
     if (target.result.os.tag == .windows) {
         exe.root_module.addImport("win32exelink", win32exelink_mod.?);

@@ -1,4 +1,5 @@
 const std = @import("std");
+const tui = @import("tui.zig");
 const builtin = @import("builtin");
 const mem = std.mem;
 
@@ -207,6 +208,7 @@ fn help() void {
         \\                                that aren't the default, master, or marked to keep.
         \\  zigup keep VERSION            mark a compiler to be kept during clean
         \\  zigup run VERSION ARGS...     run the given VERSION of the compiler with the given ARGS...
+        \\  zigup tui                     run the tui
         \\
         \\Uncommon Usage:
         \\
@@ -291,6 +293,28 @@ pub fn main2() !u8 {
         help();
         return 1;
     }
+    if (std.mem.eql(u8, "tui", args[0])) {
+        if (args.len != 1) {
+            std.log.err("'tui' command requires 0 arguments but got {d}", .{args.len - 1});
+            return 1;
+        }
+
+        while (true) {
+            const command = try runTui(allocator);
+            switch (command) {
+                .exit => return 0,
+                .default => |compiler| {
+                    try setDefaultCompilerVersion(allocator, compiler);
+                    std.debug.print("setting default compiler {s}\r\n", .{compiler});
+                },
+                .clean => |compiler| {
+                    try cleanCompilers(allocator, compiler);
+                    std.debug.print("cleaning compiler {s}\r\n", .{compiler});
+                },
+            }
+        }
+        return 0;
+    }
     if (std.mem.eql(u8, "fetch-index", args[0])) {
         if (args.len != 1) {
             std.log.err("'index' command requires 0 arguments but got {d}", .{args.len - 1});
@@ -333,7 +357,7 @@ pub fn main2() !u8 {
             std.log.err("'list' command requires 0 arguments but got {d}", .{args.len - 1});
             return 1;
         }
-        try listCompilers(allocator);
+        try printCompilers(allocator);
         return 0;
     }
     if (std.mem.eql(u8, "default", args[0])) {
@@ -342,30 +366,7 @@ pub fn main2() !u8 {
             return 0;
         }
         if (args.len == 2) {
-            const version_string = args[1];
-            const install_dir_string = try getInstallDir(allocator, .{ .create = true });
-            defer allocator.free(install_dir_string);
-            const resolved_version_string = init_resolved: {
-                if (!std.mem.eql(u8, version_string, "master"))
-                    break :init_resolved version_string;
-
-                const optional_master_dir: ?[]const u8 = blk: {
-                    var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
-                        error.FileNotFound => break :blk null,
-                        else => return e,
-                    };
-                    defer install_dir.close();
-                    break :blk try getMasterDir(allocator, &install_dir);
-                };
-                // no need to free master_dir, this is a short lived program
-                break :init_resolved optional_master_dir orelse {
-                    std.log.err("master has not been fetched", .{});
-                    return 1;
-                };
-            };
-            const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, resolved_version_string });
-            defer allocator.free(compiler_dir);
-            try setDefaultCompiler(allocator, compiler_dir, .verify_existence);
+            try setDefaultCompilerVersion(allocator, args[1]);
             return 0;
         }
         std.log.err("'default' command requires 1 or 2 arguments but got {d}", .{args.len - 1});
@@ -381,6 +382,12 @@ pub fn main2() !u8 {
     return 1;
 
     //const optionalInstallPath = try find_zigs(allocator);
+}
+
+fn runTui(allocator: Allocator) !tui.Command {
+    const compilers = try listCompilers(allocator);
+    const default_compiler = try getDefaultCompiler(allocator);
+    return try tui.tui(allocator, compilers, default_compiler);
 }
 
 pub fn runCompiler(allocator: Allocator, args: []const []const u8) !u8 {
@@ -575,25 +582,32 @@ fn existsAbsolute(absolutePath: []const u8) !bool {
     return true;
 }
 
-fn listCompilers(allocator: Allocator) !void {
+fn listCompilers(allocator: Allocator) ![][]u8 {
     const install_dir_string = try getInstallDir(allocator, .{ .create = false });
     defer allocator.free(install_dir_string);
 
-    var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
-        error.FileNotFound => return,
-        else => return e,
-    };
+    var install_dir = try std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true });
     defer install_dir.close();
 
+    var result = ArrayList([]u8).init(allocator);
+    defer result.deinit();
+    var it = install_dir.iterate();
+    while (try it.next()) |entry| {
+        if (entry.kind != .directory)
+            continue;
+        if (std.mem.endsWith(u8, entry.name, ".installing"))
+            continue;
+        try result.append(try allocator.dupe(u8, entry.name));
+    }
+    return result.toOwnedSlice() catch |e| oom(e);
+}
+
+fn printCompilers(allocator: Allocator) !void {
+    const compilers = try listCompilers(allocator);
     const stdout = std.io.getStdOut().writer();
     {
-        var it = install_dir.iterate();
-        while (try it.next()) |entry| {
-            if (entry.kind != .directory)
-                continue;
-            if (std.mem.endsWith(u8, entry.name, ".installing"))
-                continue;
-            try stdout.print("{s}\n", .{entry.name});
+        for (compilers) |compiler| {
+            try stdout.print("{s}\n", .{compiler});
         }
     }
 }
@@ -738,6 +752,32 @@ fn printDefaultCompiler(allocator: Allocator) !void {
 }
 
 const ExistVerify = enum { existence_verified, verify_existence };
+
+fn setDefaultCompilerVersion(allocator: Allocator, compiler_version: []const u8) !void {
+    const install_dir_string = try getInstallDir(allocator, .{ .create = true });
+    defer allocator.free(install_dir_string);
+    const resolved_version_string = init_resolved: {
+        if (!std.mem.eql(u8, compiler_version, "master"))
+            break :init_resolved compiler_version;
+
+        const optional_master_dir: ?[]const u8 = blk: {
+            var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
+                error.FileNotFound => break :blk null,
+                else => return e,
+            };
+            defer install_dir.close();
+            break :blk try getMasterDir(allocator, &install_dir);
+        };
+        // no need to free master_dir, this is a short lived program
+        break :init_resolved optional_master_dir orelse {
+            std.log.err("master has not been fetched", .{});
+            std.process.exit(1);
+        };
+    };
+    const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, resolved_version_string });
+    defer allocator.free(compiler_dir);
+    try setDefaultCompiler(allocator, compiler_dir, .verify_existence);
+}
 
 fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, exist_verify: ExistVerify) !void {
     switch (exist_verify) {
