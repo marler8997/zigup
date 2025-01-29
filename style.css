@@ -1,0 +1,117 @@
+body {
+  font-family: courier;
+  text-align: center;
+  background: #333;
+  color: #eee;
+}
+
+.main {
+  margin-top: 30px;
+}
+
+.title {
+  font-size: 2rem;
+  font-weight: bold;
+}
+
+.ver {
+  color: #ccc;
+}
+
+.os_opts,
+.arch_opts {
+  user-select: none;
+  font-weight: bold;
+  margin: 10px 0;
+  color: #222;
+}
+
+.os_opts div,
+.arch_opts div {
+  display: inline-block;
+  padding: 10px 14px;
+  border-radius: 2px;
+  background-color: #eee;
+}
+
+.os_opts div:hover,
+.arch_opts div:hover {
+  filter: brightness(85%);
+}
+
+.os_opts .enabled,
+.arch_opts .enabled {
+  background-color: #3277e5;
+}
+
+.result {
+  margin-top: 20px;
+}
+
+.result .head {
+  font-size: x-large;
+  font-weight: bold;
+  margin-top: 1rem;
+  text-align: center;
+}
+
+.file a {
+  color: #eee;
+  font-size: 1.4rem;
+}
+
+.commands {
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.commands .item {
+  display: flex;
+  margin-bottom: 1.4rem;
+}
+
+.commands .item .copy {
+  padding: 10px 14px;
+  border-radius: 2px;
+  background-color: #eee;
+  color: #222;
+  font-weight: bold;
+  user-select: none;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  margin-right: 1rem;
+}
+
+.commands .item .copy:hover {
+  filter: brightness(90%);
+}
+
+.commands .item .copy:active {
+  filter: brightness(80%);
+}
+
+.commands .item code {
+  background-color: #111;
+  padding: 0.75em;
+  font-family: courier new;
+  text-align: left;
+  word-wrap: break-word;
+  width: 100%;
+}
+
+.hidden {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  body * {
+    font-size: 4rem !important;
+  }
+
+  .commands {
+    /* margin: 0; */
+    max-width: 99vw;
+  }
+}
