@@ -1,236 +1,198 @@
-<!DOCTYPE html>
-<html><head>
-<title>Zigup</title>
-<style>
+<!doctype html>
+<html lang="">
+  <head>
+    <script type="module" src="/@vite/client"></script>
 
-* { margin:0; padding:0; }
-body {
-    margin-top:30px;
-    font-family: courier;
-    text-align:center;
-    background:#333;
-    color:#ccc;
-}
-a { color: #eee }
-h1 { color:#eee }
-h2 { color:#eee }
-section {
-    display: grid;
-    justify-items: center;
-    align-items: center;
-}
-code {
-    padding: 0.75em;
-    font-family: courier new;
-    text-align: left;
-    word-wrap: break-word;
-    background: #111;
-}
+    <meta charset="utf-8" />
+    <title>Zigup install</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="index.js" defer></script>
+  </head>
 
-#InstallDiv {
-    margin:10px;
-}
-
-.CopyButton {
-    padding:5px;
-}
-
-.FilterButton {
-  display:inline-block;
-  width: 60px;
-  height: 15px;
-  line-height: 15px;
-  text-align:center;
-  padding: 10px;
-  border-radius: 2px;
-  border: 0;
-  background:#ccc;
-  font-size: 15px;
-  color: #000;
-  cursor:default;
-  user-select:none;
-  font-weight:bold;
-}
-.FilterButton:hover {
-  background:#aaa;
-}
-.FilterButtonEnabled {
-  background:#4287f5;
-}
-.FilterButtonEnabled:hover {
-  background:#3277e5;
-}
-
-.Commands {
-  display: grid;
-  gap: 1em;
-  grid-auto-rows: 5em;
-}
-.Commands div {
-  display: grid;
-  gap: 3em;
-  grid-template-columns: 10em 45em;
-}
-
-</style>
-<script>
-
-const version = "v2025_01_02";
-function get(id) { return document.getElementById(id); }
-
-
-function copyToClipboard(text) {
-  navigator.clipboard.writeText(text)
-    .then(() => {
-      console.log('Text copied to clipboard');
-    })
-    .catch(err => {
-      console.error('Could not copy text: ', err);
-    });
-}
-
-  function copyCommand(id) {
-      pre = get('command' + id);
-      copyToClipboard(pre.innerHTML)
-  }
-
-  function generateCommandHtml(ids, cmd) {
-      const id = ids.next_id;
-      ids.next_id++;
-      return (
-          '<div>' +
-              '<button class="CopyButton" onclick="copyCommand(' + id + ')">Copy</button> ' +
-              '<code style="display:inline-block" id="command' + id + '">' + cmd + '</code>' +
-          '</div>'
-      );
-  }
-
-  function updateButton(button, enable) {
-      if (enable) {
-          button.classList.add("FilterButtonEnabled");
-      } else {
-          button.classList.remove("FilterButtonEnabled");
-      }
-  }
-
-  function toggleOs(os) {
-      if (current_os == os) {
-          current_os = -1;
-      } else {
-          current_os = os;
-      }
-      updateButton(get("ButtonLinux"), current_os == OS_LINUX);
-      updateButton(get("ButtonMacos"), current_os == OS_MACOS);
-      updateButton(get("ButtonWindows"), current_os == OS_WINDOWS);
-      updateInstallDiv();
-  }
-  function toggleArch(arch) {
-      if (current_arch == arch) {
-          current_arch = -1;
-      } else {
-          current_arch = arch;
-      }
-      updateButton(get("ButtonX86_64"), current_arch == ARCH_X86_64);
-      updateButton(get("ButtonAArch64"), current_arch == ARCH_AARCH64);
-      updateInstallDiv();
-  }
-
-  const OS_LINUX = 0;
-  const OS_MACOS = 1;
-  const OS_WINDOWS = 2;
-  const ARCH_X86_64 = 0;
-  const ARCH_AARCH64 = 1;
-
-  var current_os = -1;
-  var current_arch = -1;
-  var include_curl = true;
-  var include_wget = true;
-  var include_homebrew = false;
-  var include_powershell = false;
-
-  function updateInstallDiv() {
-      var arch_os = null;
-      var archive_ext = null;
-      include_homebrew = false;
-      include_powershell = false;
-      if (current_os == OS_LINUX) {
-          archive_ext = ".tar.gz";
-          if (current_arch == ARCH_X86_64) {
-              arch_os = "x86_64-linux";
-          } else if (current_arch == ARCH_AARCH64) {
-              arch_os = "aarch64-linux";
-          }
-      } else if (current_os == OS_MACOS) {
-          include_homebrew = true;
-          archive_ext = ".tar.gz";
-          if (current_arch == ARCH_X86_64) {
-              arch_os = "x86_64-macos";
-          } else if (current_arch == ARCH_AARCH64) {
-              arch_os = "aarch64-macos";
-          }
-      } else if (current_os == OS_WINDOWS) {
-          archive_ext = ".zip";
-          if (current_arch == ARCH_X86_64) {
-              include_powershell = true;
-              arch_os = "x86_64-windows";
-          }
-      }
-
-      html = '';
-
-      if (arch_os != null) {
-          const basename = 'zigup-' + arch_os + archive_ext;
-          const archive_url = 'https://github.com/marler8997/zigup/releases/download/' + version + '/' + basename;
-          html += '<br/><h2 style="margin:15px"><a href="' + archive_url + '">' + basename + '</a></h2>';
-
-          html += '<br/><h2>Command Line Install:</h2>';
-          html += "<section><div class='Commands'>";
-          var ids = { next_id: 0 };
-          if (include_homebrew) {
-              html += generateCommandHtml(ids, "brew install zigup");
-          }
-          if (include_curl) {
-              html += generateCommandHtml(ids, 'curl -L ' + archive_url + ' | tar xz');
-          }
-          if (include_wget) {
-              html += generateCommandHtml(ids, 'wget -O - ' + archive_url + ' | tar xz');
-          }
-          if (include_powershell) {
-              html += generateCommandHtml(ids, "Invoke-WebRequest -Uri " + archive_url + " -OutFile \"zigup-"  + arch_os + ".zip\"; Expand-Archive -Path \"zigup-" + arch_os + ".zip\" -DestinationPath \"zigup-" + version + "\"");
-          }
-          html += "</div></section>";
-      }
-      get('InstallDiv').innerHTML = html;
-  }
-
-  function bodyOnload() {
-      get("VersionDiv").innerHTML = version;
-      updateInstallDiv()
-
-      let userAgent = window.navigator.userAgent;
-      console.log("userAgent '" + userAgent + "'");
-      if (userAgent.indexOf("Linux") != -1) toggleOs(OS_LINUX);
-      if (userAgent.indexOf("MacOS") != -1) toggleOs(OS_MACOS);
-      if (userAgent.indexOf("Win") != -1) toggleOs(OS_WINDOWS);
-
-      if (userAgent.indexOf("x64") != -1) toggleArch(ARCH_X86_64);
-  }
-
-</script>
-</head><body onload="bodyOnload()">
-
-<h1>Install Zigup</h1>
-<div id="VersionDiv"></div>
-<div style="margin:10px">
-  <span id="ButtonLinux" class="FilterButton" onclick="toggleOs(OS_LINUX)">Linux</span>
-  <span id="ButtonMacos" class="FilterButton" onclick="toggleOs(OS_MACOS)">macOS</span>
-  <span id="ButtonWindows" class="FilterButton" onclick="toggleOs(OS_WINDOWS)">Windows</span>
-</div>
-<div style="margin:10px">
-  <span id="ButtonX86_64" class="FilterButton" onclick="toggleArch(ARCH_X86_64)">x86_64</span>
-  <span id="ButtonAArch64" class="FilterButton" onclick="toggleArch(ARCH_AARCH64)">aarch64</span>
-</div>
-<div id="InstallDiv"></div>
-
-
+  <body>
+    <div class="main">
+      <div class="title">Install Zigup</div>
+      <div class="ver">v2025_01_02</div>
+      <div class="os_opts">
+        <div>Linux</div>
+        <div>macOS</div>
+        <div>Windows</div>
+      </div>
+      <div class="arch_opts">
+        <div>x86_64</div>
+        <div>aarch64</div>
+      </div>
+      <noscript
+        >It's a pity that your bowser does not support javascript, so just
+        mannuly copy the script.</noscript
+      >
+      <div class="result">
+        <div class="os linux">
+          <div class="arch x86_64">
+            <div class="head">File Install</div>
+            <div class="file">
+              <a
+                href="https://github.com/marler8997/zigup/releases/download/v2025_01_02/zigup-x86_64-linux.tar.gz"
+                >zigup-x86_64-linux.tar.gz</a
+              >
+            </div>
+            <div class="head">Command Line Install</div>
+            <div class="commands">
+              <div class="item">
+                <div class="copy">Copy</div>
+                <code
+                  >curl -L
+                  https://github.com/marler8997/zigup/releases/download/v2025_01_02/zigup-aarch64-linux.tar.gz
+                  | tar xz</code
+                >
+              </div>
+              <div class="item">
+                <div class="copy">Copy</div>
+                <code
+                  >wget -O -
+                  https://github.com/marler8997/zigup/releases/download/v2025_01_02/zigup-aarch64-linux.tar.gz
+                  | tar xz</code
+                >
+              </div>
+            </div>
+          </div>
+          <div class="arch aarch64">
+            <div class="head">File Install</div>
+            <div class="file">
+              <a
+                href="https://github.com/marler8997/zigup/releases/download/v2025_01_02/zigup-aarch64-linux.tar.gz"
+                >zigup-aarch64-linux.tar.gz</a
+              >
+            </div>
+            <div class="head">Command Line Install</div>
+            <div class="commands">
+              <div class="item">
+                <div class="copy">Copy</div>
+                <code
+                  >curl -L
+                  https://github.com/marler8997/zigup/releases/download/v2025_01_02/zigup-aarch64-linux.tar.gz
+                  | tar xz</code
+                >
+              </div>
+              <div class="item">
+                <div class="copy">Copy</div>
+                <code
+                  >wget -O -
+                  https://github.com/marler8997/zigup/releases/download/v2025_01_02/zigup-aarch64-linux.tar.gz
+                  | tar xz</code
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="os macos">
+          <div class="arch x86_64">
+            <div class="head">File Install</div>
+            <div class="file">
+              <a
+                href="https://github.com/marler8997/zigup/releases/download/v2025_01_02/zigup-x86_64-macos.tar.gz"
+                >zigup-x86_64-macos.tar.gz</a
+              >
+            </div>
+            <div class="head">Command Line Install</div>
+            <div class="commands">
+              <div class="item">
+                <div class="copy">Copy</div>
+                <code>brew install zigup</code>
+              </div>
+              <div class="item">
+                <div class="copy">Copy</div>
+                <code
+                  >curl -L
+                  https://github.com/marler8997/zigup/releases/download/v2025_01_02/zigup-x86_64-macos.tar.gz
+                  | tar xz</code
+                >
+              </div>
+              <div class="item">
+                <div class="copy">Copy</div>
+                <code
+                  >wget -O -
+                  https://github.com/marler8997/zigup/releases/download/v2025_01_02/zigup-x86_64-macos.tar.gz
+                  | tar xz</code
+                >
+              </div>
+            </div>
+          </div>
+          <div class="arch aarch64">
+            <div class="head">File Install</div>
+            <div class="file">
+              <a
+                href="https://github.com/marler8997/zigup/releases/download/v2025_01_02/zigup-aarch64-macos.tar.gz"
+                >zigup-aarch64-macos.tar.gz</a
+              >
+            </div>
+            <div class="head">Command Line Install</div>
+            <div class="commands">
+              <div class="item">
+                <div class="copy">Copy</div>
+                <code>brew install zigup</code>
+              </div>
+              <div class="item">
+                <div class="copy">Copy</div>
+                <code
+                  >curl -L
+                  https://github.com/marler8997/zigup/releases/download/v2025_01_02/zigup-aarch64-macos.tar.gz
+                  | tar xz</code
+                >
+              </div>
+              <div class="item">
+                <div class="copy">Copy</div>
+                <code
+                  >wget -O -
+                  https://github.com/marler8997/zigup/releases/download/v2025_01_02/zigup-aarch64-macos.tar.gz
+                  | tar xz</code
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="os windows">
+          <div class="arch x86_64">
+            <div class="head">File Install</div>
+            <div class="file">
+              <a
+                href="https://github.com/marler8997/zigup/releases/download/v2025_01_02/zigup-x86_64-windows.zip"
+                >zigup-x86_64-windows.zip</a
+              >
+            </div>
+            <div class="head">Command Line Install</div>
+            <div class="commands">
+              <div class="item">
+                <div class="copy">Copy</div>
+                <code
+                  >curl -L
+                  https://github.com/marler8997/zigup/releases/download/v2025_01_02/zigup-x86_64-windows.zip
+                  | tar xz</code
+                >
+              </div>
+              <div class="item">
+                <div class="copy">Copy</div>
+                <code
+                  >wget -O -
+                  https://github.com/marler8997/zigup/releases/download/v2025_01_02/zigup-x86_64-windows.zip
+                  | tar xz</code
+                >
+              </div>
+              <div class="item">
+                <div class="copy">Copy</div>
+                <code
+                  >Invoke-WebRequest -Uri
+                  https://github.com/marler8997/zigup/releases/download/v2025_01_02/zigup-x86_64-windows.zip
+                  -OutFile "zigup-x86_64-windows.zip"; Expand-Archive -Path
+                  "zigup-x86_64-windows.zip" -DestinationPath
+                  "zigup-v2025_01_02"</code
+                >
+              </div>
+            </div>
+          </div>
+          <div class="arch aarch64">Nothing here.</div>
+        </div>
+      </div>
+    </div>
+  </body>
 </html>
