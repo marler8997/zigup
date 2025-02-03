@@ -40,10 +40,11 @@ pub fn main() !void {
     // }
 
     const path_link = try std.fs.path.join(arena, &.{ out_env_dir, "zig" ++ exe_ext });
-    const install_dir = try std.fs.path.join(arena, &.{ out_env_dir, "install" });
+    const appdata = try std.fs.path.join(arena, &.{ out_env_dir, "appdata" });
+    const cache_dir = try std.fs.path.join(arena, &.{ out_env_dir, "cache" });
 
     if (std.mem.eql(u8, in_env_dir, "--no-input-environment")) {
-        try std.fs.cwd().makeDir(install_dir);
+        try std.fs.cwd().makeDir(cache_dir);
     } else {
         try copyEnvDir(arena, in_env_dir, out_env_dir, in_env_dir, out_env_dir);
     }
@@ -81,8 +82,10 @@ pub fn main() !void {
     try argv.append(zigup_exe);
     try argv.append("--path-link");
     try argv.append(path_link);
-    try argv.append("--install-dir");
-    try argv.append(install_dir);
+    try argv.append("--appdata");
+    try argv.append(appdata);
+    try argv.append("--global-cache-dir");
+    try argv.append(cache_dir);
     try argv.appendSlice(zigup_args);
 
     var child = std.process.Child.init(argv.items, arena);

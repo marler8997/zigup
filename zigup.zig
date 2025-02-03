@@ -26,7 +26,13 @@ const url_platform = os ++ "-" ++ arch;
 const json_platform = arch ++ "-" ++ os;
 const archive_ext = if (builtin.os.tag == .windows) "zip" else "tar.xz";
 
-var global_optional_install_dir: ?[]const u8 = null;
+const global = struct {
+    var arena_instance = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const arena = arena_instance.allocator();
+    var override_global_cache_dir: ?[]const u8 = null;
+    var app_data_path: ?[]const u8 = null;
+    var app_data_dir_created: bool = false;
+};
 var global_optional_path_link: ?[]const u8 = null;
 
 var global_enable_log = true;
@@ -138,42 +144,41 @@ fn getHomeDir() ![]const u8 {
     };
 }
 
-fn allocInstallDirString(allocator: Allocator) ![]const u8 {
-    // TODO: maybe support ZIG_INSTALL_DIR environment variable?
-    // TODO: maybe support a file on the filesystem to configure install dir?
-    if (builtin.os.tag == .windows) {
-        const self_exe_dir = try std.fs.selfExeDirPathAlloc(allocator);
-        defer allocator.free(self_exe_dir);
-        return std.fs.path.join(allocator, &.{ self_exe_dir, "zig" });
+fn getAppDataPath(opt: struct { create: bool }) ![]const u8 {
+    if (global.app_data_path == null) {
+        global.app_data_path = try std.fs.getAppDataDir(global.arena, "zigup");
+        std.log.info("appdata '{s}'", .{global.app_data_path.?});
     }
-    const home = try getHomeDir();
-    if (!std.fs.path.isAbsolute(home)) {
-        std.log.err("$HOME environment variable '{s}' is not an absolute path", .{home});
-        return error.BadHomeEnvironmentVariable;
-    }
-    return std.fs.path.join(allocator, &[_][]const u8{ home, "zig" });
-}
-const GetInstallDirOptions = struct {
-    create: bool,
-};
-fn getInstallDir(allocator: Allocator, options: GetInstallDirOptions) ![]const u8 {
-    var optional_dir_to_free_on_error: ?[]const u8 = null;
-    errdefer if (optional_dir_to_free_on_error) |dir| allocator.free(dir);
-
-    const install_dir = init: {
-        if (global_optional_install_dir) |dir| break :init dir;
-        optional_dir_to_free_on_error = try allocInstallDirString(allocator);
-        break :init optional_dir_to_free_on_error.?;
-    };
-    std.debug.assert(std.fs.path.isAbsolute(install_dir));
-    loginfo("install directory '{s}'", .{install_dir});
-    if (options.create) {
-        loggyMakeDirAbsolute(install_dir) catch |e| switch (e) {
+    if (opt.create and !global.app_data_dir_created) {
+        loggyMakeDirAbsolute(global.app_data_path.?) catch |e| switch (e) {
             error.PathAlreadyExists => {},
             else => return e,
         };
+        global.app_data_dir_created = true;
     }
-    return install_dir;
+    return global.app_data_path.?;
+}
+
+/// Caller owns returned memory.
+fn resolveGlobalCacheDir(allocator: mem.Allocator) ![]u8 {
+    if (global.override_global_cache_dir) |d| return allocator.dupe(d);
+
+    if (try std.zig.EnvVar.ZIG_GLOBAL_CACHE_DIR.get(allocator)) |value| return value;
+
+    const appname = "zig";
+
+    if (builtin.os.tag != .windows) {
+        if (std.zig.EnvVar.XDG_CACHE_HOME.getPosix()) |cache_root| {
+            if (cache_root.len > 0) {
+                return std.fs.path.join(allocator, &[_][]const u8{ cache_root, appname });
+            }
+        }
+        if (std.zig.EnvVar.HOME.getPosix()) |home| {
+            return std.fs.path.join(allocator, &[_][]const u8{ home, ".cache", appname });
+        }
+    }
+
+    return std.fs.getAppDataDir(allocator, appname);
 }
 
 fn makeZigPathLinkString(allocator: Allocator) ![]const u8 {
@@ -213,13 +218,14 @@ fn help() void {
         \\  zigup fetch-index             download and print the download index json
         \\
         \\Common Options:
-        \\  --install-dir DIR             override the default install location
         \\  --path-link PATH              path to the `zig` symlink that points to the default compiler
         \\                                this will typically be a file path within a PATH directory so
         \\                                that the user can just run `zig`
         \\  --index                       override the default index URL that zig versions/URLs are fetched from.
         \\                                default:
     ++ " " ++ default_index_url ++
+        \\  --appdata DIR                 override the appdata directory
+        \\  --global-cache-dir DIR        override the global Zig cache directory
         \\
         \\
     ) catch unreachable;
@@ -262,11 +268,10 @@ pub fn main2() !u8 {
         var newlen: usize = 0;
         while (i < args.len) : (i += 1) {
             const arg = args[i];
-            if (std.mem.eql(u8, "--install-dir", arg)) {
-                global_optional_install_dir = try getCmdOpt(args, &i);
-                if (!std.fs.path.isAbsolute(global_optional_install_dir.?)) {
-                    global_optional_install_dir = try toAbsolute(allocator, global_optional_install_dir.?);
-                }
+            if (std.mem.eql(u8, "--appdata", arg)) {
+                global.app_data_path = try getCmdOpt(args, &i);
+            } else if (std.mem.eql(u8, "--global-cache-dir", arg)) {
+                global.override_global_cache_dir = try getCmdOpt(args, &i);
             } else if (std.mem.eql(u8, "--path-link", arg)) {
                 global_optional_path_link = try getCmdOpt(args, &i);
                 if (!std.fs.path.isAbsolute(global_optional_path_link.?)) {
@@ -325,7 +330,7 @@ pub fn main2() !u8 {
             std.log.err("'keep' command requires 1 argument but got {d}", .{args.len - 1});
             return 1;
         }
-        try keepCompiler(allocator, args[1]);
+        try keepCompiler(args[1]);
         return 0;
     }
     if (std.mem.eql(u8, "list", args[0])) {
@@ -333,7 +338,7 @@ pub fn main2() !u8 {
             std.log.err("'list' command requires 0 arguments but got {d}", .{args.len - 1});
             return 1;
         }
-        try listCompilers(allocator);
+        try listCompilers();
         return 0;
     }
     if (std.mem.eql(u8, "default", args[0])) {
@@ -343,19 +348,23 @@ pub fn main2() !u8 {
         }
         if (args.len == 2) {
             const version_string = args[1];
-            const install_dir_string = try getInstallDir(allocator, .{ .create = true });
-            defer allocator.free(install_dir_string);
+
+            const appdata_path = try getAppDataPath(.{ .create = false });
+
             const resolved_version_string = init_resolved: {
                 if (!std.mem.eql(u8, version_string, "master"))
                     break :init_resolved version_string;
 
                 const optional_master_dir: ?[]const u8 = blk: {
-                    var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
+                    var appdata_dir = std.fs.openDirAbsolute(appdata_path, .{ .iterate = true }) catch |e| switch (e) {
                         error.FileNotFound => break :blk null,
                         else => return e,
                     };
-                    defer install_dir.close();
-                    break :blk try getMasterDir(allocator, &install_dir);
+                    defer appdata_dir.close();
+                    const r = try getMasterDir(allocator, &appdata_dir);
+                    if (true) std.debug.panic("r is {?s}", .{r});
+                    break :blk r;
+                    //break :blk try getMasterDir(allocator, &appdata_dir);
                 };
                 // no need to free master_dir, this is a short lived program
                 break :init_resolved optional_master_dir orelse {
@@ -363,7 +372,7 @@ pub fn main2() !u8 {
                     return 1;
                 };
             };
-            const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, resolved_version_string });
+            const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ appdata_path, resolved_version_string });
             defer allocator.free(compiler_dir);
             try setDefaultCompiler(allocator, compiler_dir, .verify_existence);
             return 0;
@@ -391,10 +400,9 @@ pub fn runCompiler(allocator: Allocator, args: []const []const u8) !u8 {
         return 1;
     }
     const version_string = args[0];
-    const install_dir_string = try getInstallDir(allocator, .{ .create = true });
-    defer allocator.free(install_dir_string);
+    const appdata_path = try getAppDataPath(.{ .create = true });
 
-    const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, version_string });
+    const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ appdata_path, version_string });
     defer allocator.free(compiler_dir);
     if (!try existsAbsolute(compiler_dir)) {
         std.log.err("compiler '{s}' does not exist, fetch it first with: zigup fetch {0s}", .{version_string});
@@ -402,7 +410,7 @@ pub fn runCompiler(allocator: Allocator, args: []const []const u8) !u8 {
     }
 
     var argv = std.ArrayList([]const u8).init(allocator);
-    try argv.append(try std.fs.path.join(allocator, &.{ compiler_dir, "files", comptime "zig" ++ builtin.target.exeFileExt() }));
+    try argv.append(try std.fs.path.join(allocator, &.{ compiler_dir, comptime "zig" ++ builtin.target.exeFileExt() }));
     try argv.appendSlice(args[1..]);
 
     // TODO: use "execve" if on linux
@@ -425,8 +433,7 @@ fn fetchCompiler(
     version_arg: []const u8,
     set_default: SetDefault,
 ) !void {
-    const install_dir = try getInstallDir(allocator, .{ .create = true });
-    defer allocator.free(install_dir);
+    const appdata_dir = try getAppDataPath(.{ .create = true });
 
     var optional_download_index: ?DownloadIndex = null;
     // This is causing an LLVM error
@@ -450,11 +457,11 @@ fn fetchCompiler(
         const master_linux_tarball = master_linux.object.get("tarball").?.string;
         break :blk VersionUrl{ .version = compiler_version, .url = master_linux_tarball };
     };
-    const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, version_url.version });
+    const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ appdata_dir, version_url.version });
     defer allocator.free(compiler_dir);
     try installCompiler(allocator, compiler_dir, version_url.url);
     if (is_master) {
-        const master_symlink = try std.fs.path.join(allocator, &[_][]const u8{ install_dir, "master" });
+        const master_symlink = try std.fs.path.join(allocator, &[_][]const u8{ appdata_dir, "master" });
         defer allocator.free(master_symlink);
         if (builtin.os.tag == .windows) {
             var file = try std.fs.createFileAbsolute(master_symlink, .{});
@@ -575,19 +582,18 @@ fn existsAbsolute(absolutePath: []const u8) !bool {
     return true;
 }
 
-fn listCompilers(allocator: Allocator) !void {
-    const install_dir_string = try getInstallDir(allocator, .{ .create = false });
-    defer allocator.free(install_dir_string);
+fn listCompilers() !void {
+    const appdata_path = try getAppDataPath(.{ .create = false });
 
-    var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
+    var appdata_dir = std.fs.openDirAbsolute(appdata_path, .{ .iterate = true }) catch |e| switch (e) {
         error.FileNotFound => return,
         else => return e,
     };
-    defer install_dir.close();
+    defer appdata_dir.close();
 
     const stdout = std.io.getStdOut().writer();
     {
-        var it = install_dir.iterate();
+        var it = appdata_dir.iterate();
         while (try it.next()) |entry| {
             if (entry.kind != .directory)
                 continue;
@@ -598,14 +604,13 @@ fn listCompilers(allocator: Allocator) !void {
     }
 }
 
-fn keepCompiler(allocator: Allocator, compiler_version: []const u8) !void {
-    const install_dir_string = try getInstallDir(allocator, .{ .create = true });
-    defer allocator.free(install_dir_string);
+fn keepCompiler(compiler_version: []const u8) !void {
+    const appdata_path = try getAppDataPath(.{ .create = true });
 
-    var install_dir = try std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true });
-    defer install_dir.close();
+    var appdata_dir = try std.fs.openDirAbsolute(appdata_path, .{ .iterate = true });
+    defer appdata_dir.close();
 
-    var compiler_dir = install_dir.openDir(compiler_version, .{}) catch |e| switch (e) {
+    var compiler_dir = appdata_dir.openDir(compiler_version, .{}) catch |e| switch (e) {
         error.FileNotFound => {
             std.log.err("compiler not found: {s}", .{compiler_version});
             return error.AlreadyReported;
@@ -614,32 +619,31 @@ fn keepCompiler(allocator: Allocator, compiler_version: []const u8) !void {
     };
     var keep_fd = try compiler_dir.createFile("keep", .{});
     keep_fd.close();
-    loginfo("created '{s}{c}{s}{c}{s}'", .{ install_dir_string, std.fs.path.sep, compiler_version, std.fs.path.sep, "keep" });
+    loginfo("created '{s}{c}{s}{c}{s}'", .{ appdata_path, std.fs.path.sep, compiler_version, std.fs.path.sep, "keep" });
 }
 
 fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
-    const install_dir_string = try getInstallDir(allocator, .{ .create = true });
-    defer allocator.free(install_dir_string);
+    const appdata_path = try getAppDataPath(.{ .create = true });
     // getting the current compiler
     const default_comp_opt = try getDefaultCompiler(allocator);
     defer if (default_comp_opt) |default_compiler| allocator.free(default_compiler);
 
-    var install_dir = std.fs.openDirAbsolute(install_dir_string, .{ .iterate = true }) catch |e| switch (e) {
+    var appdata_dir = std.fs.openDirAbsolute(appdata_path, .{ .iterate = true }) catch |e| switch (e) {
         error.FileNotFound => return,
         else => return e,
     };
-    defer install_dir.close();
-    const master_points_to_opt = try getMasterDir(allocator, &install_dir);
+    defer appdata_dir.close();
+    const master_points_to_opt = try getMasterDir(allocator, &appdata_dir);
     defer if (master_points_to_opt) |master_points_to| allocator.free(master_points_to);
     if (compiler_name_opt) |compiler_name| {
         if (getKeepReason(master_points_to_opt, default_comp_opt, compiler_name)) |reason| {
             std.log.err("cannot clean '{s}' ({s})", .{ compiler_name, reason });
             return error.AlreadyReported;
         }
-        loginfo("deleting '{s}{c}{s}'", .{ install_dir_string, std.fs.path.sep, compiler_name });
-        try fixdeletetree.deleteTree(install_dir, compiler_name);
+        loginfo("deleting '{s}{c}{s}'", .{ appdata_path, std.fs.path.sep, compiler_name });
+        try fixdeletetree.deleteTree(appdata_dir, compiler_name);
     } else {
-        var it = install_dir.iterate();
+        var it = appdata_dir.iterate();
         while (try it.next()) |entry| {
             if (entry.kind != .directory)
                 continue;
@@ -649,7 +653,7 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
             }
 
             {
-                var compiler_dir = try install_dir.openDir(entry.name, .{});
+                var compiler_dir = try appdata_dir.openDir(entry.name, .{});
                 defer compiler_dir.close();
                 if (compiler_dir.access("keep", .{})) |_| {
                     loginfo("keeping '{s}' (has keep file)", .{entry.name});
@@ -659,8 +663,8 @@ fn cleanCompilers(allocator: Allocator, compiler_name_opt: ?[]const u8) !void {
                     else => return e,
                 }
             }
-            loginfo("deleting '{s}{c}{s}'", .{ install_dir_string, std.fs.path.sep, entry.name });
-            try fixdeletetree.deleteTree(install_dir, entry.name);
+            loginfo("deleting '{s}{c}{s}'", .{ appdata_path, std.fs.path.sep, entry.name });
+            try fixdeletetree.deleteTree(appdata_dir, entry.name);
         }
     }
 }
@@ -692,19 +696,19 @@ fn readDefaultCompiler(allocator: Allocator, buffer: *[std.fs.max_path_bytes + 1
     return try allocator.dupe(u8, targetPathToVersion(target_path));
 }
 fn targetPathToVersion(target_path: []const u8) []const u8 {
-    return std.fs.path.basename(std.fs.path.dirname(std.fs.path.dirname(target_path).?).?);
+    return std.fs.path.basename(std.fs.path.dirname(target_path).?);
 }
 
-fn readMasterDir(buffer: *[std.fs.max_path_bytes]u8, install_dir: *std.fs.Dir) !?[]const u8 {
+fn readMasterDir(buffer: *[std.fs.max_path_bytes]u8, appdata_dir: *std.fs.Dir) !?[]const u8 {
     if (builtin.os.tag == .windows) {
-        var file = install_dir.openFile("master", .{}) catch |e| switch (e) {
+        var file = appdata_dir.openFile("master", .{}) catch |e| switch (e) {
             error.FileNotFound => return null,
             else => return e,
         };
         defer file.close();
         return buffer[0..try file.readAll(buffer)];
     }
-    return install_dir.readLink("master", buffer) catch |e| switch (e) {
+    return appdata_dir.readLink("master", buffer) catch |e| switch (e) {
         error.FileNotFound => return null,
         else => return e,
     };
@@ -718,9 +722,9 @@ fn getDefaultCompiler(allocator: Allocator) !?[]const u8 {
     return path_to_return;
 }
 
-fn getMasterDir(allocator: Allocator, install_dir: *std.fs.Dir) !?[]const u8 {
+fn getMasterDir(allocator: Allocator, appdata_dir: *std.fs.Dir) !?[]const u8 {
     var buffer: [std.fs.max_path_bytes]u8 = undefined;
-    const slice_path = (try readMasterDir(&buffer, install_dir)) orelse return null;
+    const slice_path = (try readMasterDir(&buffer, appdata_dir)) orelse return null;
     const path_to_return = try allocator.alloc(u8, slice_path.len);
     @memcpy(path_to_return, slice_path);
     return path_to_return;
@@ -759,7 +763,7 @@ fn setDefaultCompiler(allocator: Allocator, compiler_dir: []const u8, exist_veri
 
     const link_target = try std.fs.path.join(
         allocator,
-        &[_][]const u8{ compiler_dir, "files", comptime "zig" ++ builtin.target.exeFileExt() },
+        &[_][]const u8{ compiler_dir, comptime "zig" ++ builtin.target.exeFileExt() },
     );
     defer allocator.free(link_target);
     if (builtin.os.tag == .windows) {
@@ -1064,15 +1068,46 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
     {
         const extracted_dir = try std.fs.path.join(allocator, &[_][]const u8{ installing_dir, archive_root_dir });
         defer allocator.free(extracted_dir);
-        const normalized_dir = try std.fs.path.join(allocator, &[_][]const u8{ installing_dir, "files" });
-        defer allocator.free(normalized_dir);
-        try loggyRenameAbsolute(extracted_dir, normalized_dir);
+        try loggyRenameAbsolute(extracted_dir, compiler_dir);
     }
+    try loggyDeleteTreeAbsolute(installing_dir);
 
     // TODO: write date information (so users can sort compilers by date)
 
-    // finish installation by renaming the install dir
-    try loggyRenameAbsolute(installing_dir, compiler_dir);
+    // install the compiler into the cache
+    {
+        var argv: std.ArrayListUnmanaged([]const u8) = .{};
+        defer argv.deinit(allocator);
+        try argv.append(allocator, try std.fs.path.join(allocator, &.{
+            compiler_dir,
+            comptime "zig" ++ builtin.target.exeFileExt(),
+        }));
+        try argv.append(allocator, "fetch");
+        if (global.override_global_cache_dir) |d| {
+            try argv.append(allocator, "--global-cache-dir");
+            try argv.append(allocator, d);
+        }
+        try argv.append(allocator, compiler_dir);
+
+        const result = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = argv.items,
+        });
+        // var proc = std.process.Child.init(argv.items, allocator);
+        // const ret_val = try proc.spawnAndWait();
+        // switch (ret_val) {
+        const success = switch (result.term) {
+            .Exited => |code| code == 0,
+            else => false,
+        };
+        if (success) {
+            @panic("todo: delete and use cache");
+        } else {
+            if (null == std.mem.indexOf(u8, result.stderr, "unknown command")) {
+                std.debug.panic("zig fetch failed ({}) with stderr:\n{s}", .{ result.term, result.stderr });
+            }
+        }
+    }
 }
 
 pub fn run(allocator: Allocator, argv: []const []const u8) !std.process.Child.Term {

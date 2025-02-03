@@ -81,6 +81,7 @@ fn addZigupExe(
                 .root_source_file = b.path("win32exelink.zig"),
                 .target = target,
                 .optimize = optimize,
+                .single_threaded = true,
             });
             break :blk b.createModule(.{
                 .root_source_file = exe.getEmittedBin(),
