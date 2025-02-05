@@ -225,7 +225,7 @@ fn help() void {
     ) catch unreachable;
 }
 
-fn getCmdOpt(args: [][]const u8, i: *usize) ![]const u8 {
+fn getCmdOpt(args: [][:0]u8, i: *usize) ![]const u8 {
     i.* += 1;
     if (i.* == args.len) {
         std.log.err("option '{s}' requires an argument", .{args[i.* - 1]});

@@ -56,7 +56,7 @@ cp zig-out/bin/zigup BIN_PATH
 
 # Building Zigup
 
-Zigup is currently built/tested using zig 0.12.0.
+Zigup is currently built/tested using zig 0.14.0.
 
 # TODO
 
