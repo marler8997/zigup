@@ -383,9 +383,10 @@ const Config = struct {
         const src = try fd.readToEndAllocOptions(allocator, 2048, null, 1, 0);
         defer allocator.free(src);
         var status = std.mem.zeroes(std.zon.parse.Status);
-        const zon = std.zon.parse.fromSlice(Config, allocator, src, &status, .{}) catch {
-            std.debug.print("{any}\n", .{status});
-            return error.fail_parse;
+        const zon = std.zon.parse.fromSlice(Config, allocator, src, &status, .{}) catch |e| {
+            if (e == error.ParseZon)
+                std.debug.print("Error in configuration file '{s}':\n{}\n", .{ zon_path, status });
+            return e;
         };
         defer status.deinit(allocator);
 
