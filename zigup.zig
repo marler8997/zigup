@@ -421,6 +421,16 @@ const Config = struct {
             conf.install_dir = try toAbsolute(allocator, conf.install_dir.?);
         if (!std.fs.path.isAbsolute(conf.path_link.?))
             conf.path_link = try toAbsolute(allocator, conf.path_link.?);
+
+        // Strip trailing path separators
+        inplaceStripTrailingPathSep(&conf.install_dir.?);
+        inplaceStripTrailingPathSep(&conf.path_link.?);
+    }
+
+    fn inplaceStripTrailingPathSep(path: *[]const u8) void {
+        const len = path.*.len;
+        if (path.*[len - 1] == std.fs.path.sep)
+            path.* = path.*[0 .. len - 1];
     }
 
     fn allocDefaultInstallDir(allocator: Allocator) ![]const u8 {
