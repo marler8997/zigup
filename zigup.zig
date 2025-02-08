@@ -170,6 +170,7 @@ fn help() void {
         \\  zigup fetch-index             download and print the download index json
         \\
         \\Common Options:
+        \\  --config PATH                 override the default configuration file location
         \\  --install-dir DIR             override the default install location
         \\  --path-link PATH              path to the `zig` symlink that points to the default compiler
         \\                                this will typically be a file path within a PATH directory so
@@ -212,6 +213,7 @@ pub fn main2() !u8 {
     var args = if (args_array.len == 0) args_array else args_array[1..];
     // parse common options
 
+    var zon_path_arg: ?[]const u8 = null;
     var config_args: Config = .{
         .install_dir = null,
         .path_link = null,
@@ -229,6 +231,8 @@ pub fn main2() !u8 {
                 config_args.path_link = try getCmdOpt(args, &i);
             } else if (std.mem.eql(u8, "--index", arg)) {
                 config_args.index = try getCmdOpt(args, &i);
+            } else if (std.mem.eql(u8, "--config", arg)) {
+                zon_path_arg = try getCmdOpt(args, &i);
             } else if (std.mem.eql(u8, "-h", arg) or std.mem.eql(u8, "--help", arg)) {
                 help();
                 return 0;
@@ -240,7 +244,7 @@ pub fn main2() !u8 {
         args = args[0..newlen];
     }
 
-    const config_zon = try Config.initFromZon(allocator);
+    const config_zon = try Config.initFromZon(allocator, zon_path_arg);
 
     // Order of precedence: CLI -> ZON -> Defaults
     config = .{
@@ -366,11 +370,21 @@ const Config = struct {
 
     const default_index_url = "https://ziglang.org/download/index.json";
 
-    // Read configuration from a ZON file, if it exists.
-    fn initFromZon(allocator: Allocator) !Config {
+    // Read configuration from a ZON file, if it exists. File must be accissible if `zon_path_override` is not null.
+    fn initFromZon(allocator: Allocator, zon_path_override: ?[]const u8) !Config {
+        const cwd = std.fs.cwd();
+
+        const zon_path = if (zon_path_override) |path| b: {
+            // If the user demands we use a specific ZON file, it must be accessible.
+            cwd.access(path, .{}) catch |e| {
+                std.debug.print("Unable to access config file '{s}': {}\n", .{ path, e });
+                return e;
+            };
+            break :b path;
+        } else try defaultZonPath(allocator);
+
         // Read ZON config
-        const zon_path = try defaultZonPath(allocator);
-        const fd = std.fs.cwd().openFile(zon_path, .{ .mode = .read_only }) catch |err| {
+        const fd = cwd.openFile(zon_path, .{ .mode = .read_only }) catch |err| {
             switch (err) {
                 error.FileNotFound => return .{
                     .install_dir = null,
