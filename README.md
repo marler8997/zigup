@@ -47,7 +47,24 @@ zigup stores each compiler in a global "install directory" in a versioned subdir
 
 zigup makes the zig program available by creating an entry in a directory that occurs in the `PATH` environment variable.  On posix systems this entry is a symlink to one of the `zig` executables in the install directory.  On windows this is an executable that forwards invocations to one of the `zig` executables in the install directory.
 
-Both the "install directory" and "path link" are configurable through command-line options `--install-dir` and `--path-link` respectively.  On posix systems the default "install directory" follows the [XDG basedir spec](https://specifications.freedesktop.org/basedir-spec/latest/#variables), ie. `$XDG_DATA_HOME/zigup` or `$HOME/.local/share/zigup` if `XDG_DATA_HOME` environment variable is empty or undefined.
+Both the "install directory" and "path link" are configurable through command-line options `--install-dir` and `--path-link` respectively, as well as in your configuration file. On posix systems the default "install directory" follows the [XDG basedir spec](https://specifications.freedesktop.org/basedir-spec/latest/#variables), ie. `$XDG_DATA_HOME/zigup` or `$HOME/.local/share/zigup` if `XDG_DATA_HOME` environment variable is empty or undefined.
+
+# Configuration
+
+zigup can be configured via file or command-line, command-line takes precedence.
+
+The configuration file is in ZON (Zig Object Notation) format. The default path for this configuration file is `~/.config/zigup.zon` for posix, and `C:\Users\<user>\AppData\Local\zigup\zigup.zon` for Windows.
+
+Any fields not set in your configuration file will use default values.
+
+An example configuration is as follows:
+```zig
+.{
+    .install_dir = "/opt/zigup/",
+    .path_link = "~/.local/bin/zig",
+}
+```
+
 # Building
 
 Run `zig build` to build, `zig build test` to test and install with:
