@@ -145,6 +145,10 @@ fn getHomeDir() ![]const u8 {
 // TODO: this should be in standard lib
 fn toAbsolute(allocator: Allocator, path: []const u8) ![]u8 {
     std.debug.assert(!std.fs.path.isAbsolute(path));
+
+    if (path[0] == '~' and builtin.os.tag != .windows)
+        return std.fs.path.join(allocator, &[_][]const u8{ try getHomeDir(), path[1..] });
+
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
     return std.fs.path.join(allocator, &[_][]const u8{ cwd, path });
