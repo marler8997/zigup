@@ -168,6 +168,7 @@ fn help() void {
         \\Uncommon Usage:
         \\
         \\  zigup fetch-index             download and print the download index json
+        \\  zigup show-config             print the current configuration in ZON format
         \\
         \\Common Options:
         \\  --config PATH                 override the default configuration file location
@@ -265,6 +266,17 @@ pub fn main2() !u8 {
     if (args.len == 0) {
         help();
         return 1;
+    }
+
+    if (std.mem.eql(u8, "show-config", args[0])) {
+        if (args.len != 1) {
+            std.log.err("'show-config' command requires 0 arguments but got {d}", .{args.len - 1});
+            return 1;
+        }
+        const zon_str = try config.serializeToZon(allocator);
+        const stdout = std.io.getStdOut().writer();
+        try stdout.print("{s}\n", .{zon_str});
+        return 0;
     }
 
     if (std.mem.eql(u8, "run", args[0])) {
@@ -440,6 +452,12 @@ const Config = struct {
             .linux => std.fs.path.join(allocator, &[_][]const u8{ try getHomeDir(), ".config/zigup.zon" }),
             else => @compileError("Not supported yet"), // TODO: Complete list
         };
+    }
+
+    fn serializeToZon(conf: *const Config, allocator: Allocator) ![]const u8 {
+        var buf = std.ArrayList(u8).init(allocator);
+        try std.zon.stringify.serialize(conf, .{}, buf.writer());
+        return buf.items;
     }
 };
 
