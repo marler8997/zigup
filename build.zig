@@ -58,7 +58,7 @@ pub fn build(b: *std.Build) !void {
     const host_zip_exe = b.addExecutable(.{
         .name = "zip",
         .root_source_file = b.path("zip.zig"),
-        .target = b.host,
+        .target = b.graph.host,
     });
 
     const ci_step = b.step("ci", "The build/test step to run on the CI");
@@ -690,8 +690,7 @@ const CleanDir = struct {
         path.addStepDependencies(&clean_dir.step);
         return clean_dir;
     }
-    fn make(step: *std.Build.Step, prog_node: std.Progress.Node) !void {
-        _ = prog_node;
+    fn make(step: *std.Build.Step, _: std.Build.Step.MakeOptions) anyerror!void {
         const b = step.owner;
         const clean_dir: *CleanDir = @fieldParentPtr("step", step);
         try b.build_root.handle.deleteTree(clean_dir.dir_path.getPath(b));
