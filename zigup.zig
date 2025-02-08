@@ -265,7 +265,17 @@ pub fn main2() !u8 {
             config_zon.index orelse
             try allocator.dupe(u8, Config.default_index_url),
     };
-    try config.ensureValid(allocator);
+    config.ensureValid(allocator) catch |e| {
+        std.debug.print("Configuration error ({})", .{e});
+        switch (e) {
+            error.EmptyInstallDir => std.debug.print(": install_dir cannot be an empty string", .{}),
+            error.EmptyPathLink => std.debug.print(": path_link cannot be an empty string", .{}),
+            error.EmptyIndex => std.debug.print(": index cannot be an empty string", .{}),
+            else => {},
+        }
+        std.debug.print("\n", .{});
+        return e;
+    };
 
     if (args.len == 0) {
         help();
@@ -424,7 +434,11 @@ const Config = struct {
     }
 
     fn ensureValid(conf: *Config, allocator: Allocator) !void {
-        // Ensure we use actual paths
+        if (config.install_dir.?.len == 0) return error.EmptyInstallDir;
+        if (config.path_link.?.len == 0) return error.EmptyPathLink;
+        if (config.index.?.len == 0) return error.EmptyIndex;
+
+        // Ensure we use absolute paths
         if (!std.fs.path.isAbsolute(conf.install_dir.?))
             conf.install_dir = try toAbsolute(allocator, conf.install_dir.?);
         if (!std.fs.path.isAbsolute(conf.path_link.?))
