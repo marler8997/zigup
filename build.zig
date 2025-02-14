@@ -173,7 +173,6 @@ fn makeCiArchiveStep(
         const zip = b.addRunArtifact(host_zip_exe);
         zip.addArg(out_zip_file);
         zip.addArg("zigup.exe");
-        zip.addArg("zigup.pdb");
         zip.cwd = .{ .cwd_relative = b.getInstallPath(
             exe_install.dest_dir.?,
             ".",
