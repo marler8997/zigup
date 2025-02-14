@@ -1,6 +1,7 @@
 .{
     .name = "zigup",
     .version = "0.0.1",
+    .minimum_zig_version = "0.13.0",
 
     .paths = .{
         "LICENSE",
