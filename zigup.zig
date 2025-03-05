@@ -97,7 +97,7 @@ fn download(allocator: Allocator, url: []const u8, writer: anytype) DownloadResu
 
     // TODO: we take advantage of request.response.content_length
 
-    var buf: [std.mem.page_size]u8 = undefined;
+    var buf: [std.heap.page_size_min]u8 = undefined;
     while (true) {
         const len = request.reader().read(&buf) catch |err| return .{ .err = std.fmt.allocPrint(
             allocator,
@@ -225,7 +225,7 @@ fn help() void {
     ) catch unreachable;
 }
 
-fn getCmdOpt(args: [][]const u8, i: *usize) ![]const u8 {
+fn getCmdOpt(args: [][:0]u8, i: *usize) ![]const u8 {
     i.* += 1;
     if (i.* == args.len) {
         std.log.err("option '{s}' requires an argument", .{args[i.* - 1]});

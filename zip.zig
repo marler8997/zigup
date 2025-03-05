@@ -354,16 +354,16 @@ fn writeStructEndian(writer: anytype, value: anytype, endian: std.builtin.Endian
 }
 pub fn byteSwapAllFields(comptime S: type, ptr: *S) void {
     switch (@typeInfo(S)) {
-        .Struct => {
+        .@"struct" => {
             inline for (std.meta.fields(S)) |f| {
                 switch (@typeInfo(f.type)) {
-                    .Struct => |struct_info| if (struct_info.backing_integer) |Int| {
+                    .@"struct" => |struct_info| if (struct_info.backing_integer) |Int| {
                         @field(ptr, f.name) = @bitCast(@byteSwap(@as(Int, @bitCast(@field(ptr, f.name)))));
                     } else {
                         byteSwapAllFields(f.type, &@field(ptr, f.name));
                     },
-                    .Array => byteSwapAllFields(f.type, &@field(ptr, f.name)),
-                    .Enum => {
+                    .array => byteSwapAllFields(f.type, &@field(ptr, f.name)),
+                    .@"enum" => {
                         @field(ptr, f.name) = @enumFromInt(@byteSwap(@intFromEnum(@field(ptr, f.name))));
                     },
                     else => {
@@ -372,11 +372,11 @@ pub fn byteSwapAllFields(comptime S: type, ptr: *S) void {
                 }
             }
         },
-        .Array => {
+        .array => {
             for (ptr) |*item| {
                 switch (@typeInfo(@TypeOf(item.*))) {
-                    .Struct, .Array => byteSwapAllFields(@TypeOf(item.*), item),
-                    .Enum => {
+                    .@"struct", .array => byteSwapAllFields(@TypeOf(item.*), item),
+                    .@"enum" => {
                         item.* = @enumFromInt(@byteSwap(@intFromEnum(item.*)));
                     },
                     else => {
