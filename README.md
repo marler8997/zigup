@@ -2,6 +2,12 @@
 
 Download and manage zig compilers.
 
+# Zigup Transition to Anyzig
+
+I personally no longer use zigup and now use "anyzig" instead (see https://github.com/marler8997/anyzig). The difference between them is that zigup helps the user manage multiple zig versions themselves whereas anyzig relies on each individual project to declare which version of zig it requires. Anyzig provides a single universal zig executable meant to be installed system-wide that works with any version of zig.
+
+Zigup will continue to be supported, however, new feature efforts will focus on anyzig instead. If you have a use case that zigup supports that anyzig doesn't please open an issue there.
+
 # How to Install
 
 Go to https://marler8997.github.io/zigup and select your OS/Arch to get a download link and/or instructions to install via the command-line.
