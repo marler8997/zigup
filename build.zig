@@ -287,7 +287,7 @@ fn addTests(
     // NOTE: this test will eventually break when these builds are cleaned up,
     //       we should support downloading from bazel and use that instead since
     //       it should be more permanent
-    tests.addWithClean(.{
+    if (false) tests.addWithClean(.{
         .name = "test-dev-version",
         .argv = &.{"0.14.0-dev.2465+70de2f3a7"},
         .check = .{ .expect_stdout_exact = "" },
