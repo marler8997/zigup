@@ -109,16 +109,17 @@ fn ci(
     host_zip_exe: *std.Build.Step.Compile,
 ) !void {
     const ci_targets = [_][]const u8{
-        "x86_64-linux",
-        "x86_64-macos",
-        "x86_64-windows",
         "aarch64-linux",
         "aarch64-macos",
         "aarch64-windows",
         "arm-linux",
-        "riscv64-linux",
-        "powerpc-linux",
         "powerpc64le-linux",
+        "riscv64-linux",
+        "x86-linux",
+        "x86-windows",
+        "x86_64-linux",
+        "x86_64-macos",
+        "x86_64-windows",
     };
 
     const make_archive_step = b.step("archive", "Create CI archives");

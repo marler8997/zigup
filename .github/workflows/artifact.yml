@@ -20,13 +20,14 @@ jobs:
         with:
           name: zigup-archives
           path: |
-            zig-out/zigup-x86_64-linux.tar.gz
-            zig-out/zigup-x86_64-macos.tar.gz
-            zig-out/zigup-x86_64-windows.zip
             zig-out/zigup-aarch64-linux.tar.gz
             zig-out/zigup-aarch64-macos.tar.gz
             zig-out/zigup-aarch64-windows.zip
             zig-out/zigup-arm-linux.tar.gz
-            zig-out/zigup-riscv64-linux.tar.gz
-            zig-out/zigup-powerpc-linux.tar.gz
             zig-out/zigup-powerpc64le-linux.tar.gz
+            zig-out/zigup-riscv64-linux.tar.gz
+            zig-out/zigup-x86-linux.tar.gz
+            zig-out/zigup-x86-windows.tar.gz
+            zig-out/zigup-x86_64-linux.tar.gz
+            zig-out/zigup-x86_64-macos.tar.gz
+            zig-out/zigup-x86_64-windows.zip
