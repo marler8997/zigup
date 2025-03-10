@@ -151,7 +151,7 @@ fn allocInstallDirString(allocator: Allocator) ![]const u8 {
         std.log.err("$HOME environment variable '{s}' is not an absolute path", .{home});
         return error.BadHomeEnvironmentVariable;
     }
-    return std.fs.path.join(allocator, &[_][]const u8{ home, "zig" });
+    return std.fs.path.join(allocator, &[_][]const u8{ home, ".local", "share", "zig" });
 }
 const GetInstallDirOptions = struct {
     create: bool,
@@ -501,12 +501,17 @@ fn fetchDownloadIndex(allocator: Allocator, index_url: []const u8) !DownloadInde
 }
 
 fn loggyMakeDirAbsolute(dir_absolute: []const u8) !void {
+    std.fs.makeDirAbsolute(dir_absolute) catch |e| {
+        if (e == error.PathAlreadyExists) {
+            return;
+        }
+        return e;
+    };
     if (builtin.os.tag == .windows) {
         loginfo("mkdir \"{s}\"", .{dir_absolute});
     } else {
         loginfo("mkdir '{s}'", .{dir_absolute});
     }
-    try std.fs.makeDirAbsolute(dir_absolute);
 }
 
 fn loggyDeleteTreeAbsolute(dir_absolute: []const u8) !void {
