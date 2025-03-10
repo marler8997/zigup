@@ -20,6 +20,7 @@ const os = switch (builtin.os.tag) {
     .windows => "windows",
     .linux => "linux",
     .macos => "macos",
+    .freebsd => "freebsd",
     else => @compileError("Unsupported OS"),
 };
 const url_platform = os ++ "-" ++ arch;
