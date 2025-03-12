@@ -131,11 +131,28 @@ fn ignoreHttpCallback(request: []const u8) void {
     _ = request;
 }
 
-fn getHomeDir() ![]const u8 {
-    return std.posix.getenv("HOME") orelse {
-        std.log.err("cannot find install directory, $HOME environment variable is not set", .{});
+fn allocInstallDirStringXdg(allocator: Allocator) ![]const u8 {
+    // see https://specifications.freedesktop.org/basedir-spec/latest/#variables
+    // try $XDG_DATA_HOME/zigup first
+    xdg_var: {
+        const xdg_data_home = std.posix.getenv("XDG_DATA_HOME") orelse break :xdg_var;
+        if (xdg_data_home.len == 0) break :xdg_var;
+        if (!std.fs.path.isAbsolute(xdg_data_home)) {
+            std.log.err("$XDG_DATA_HOME environment variable '{s}' is not an absolute path", .{xdg_data_home});
+            return error.BadXdgDataHomeEnvironmentVariable;
+        }
+        return std.fs.path.join(allocator, &[_][]const u8{ xdg_data_home, "zigup" });
+    }
+    // .. then fallback to $HOME/.local/share/zigup
+    const home = std.posix.getenv("HOME") orelse {
+        std.log.err("cannot find install directory, neither $HOME nor $XDG_DATA_HOME environment variables are set", .{});
         return error.MissingHomeEnvironmentVariable;
     };
+    if (!std.fs.path.isAbsolute(home)) {
+        std.log.err("$HOME environment variable '{s}' is not an absolute path", .{home});
+        return error.BadHomeEnvironmentVariable;
+    }
+    return std.fs.path.join(allocator, &[_][]const u8{ home, ".local", "share", "zigup" });
 }
 
 fn allocInstallDirString(allocator: Allocator) ![]const u8 {
@@ -146,12 +163,7 @@ fn allocInstallDirString(allocator: Allocator) ![]const u8 {
         defer allocator.free(self_exe_dir);
         return std.fs.path.join(allocator, &.{ self_exe_dir, "zig" });
     }
-    const home = try getHomeDir();
-    if (!std.fs.path.isAbsolute(home)) {
-        std.log.err("$HOME environment variable '{s}' is not an absolute path", .{home});
-        return error.BadHomeEnvironmentVariable;
-    }
-    return std.fs.path.join(allocator, &[_][]const u8{ home, "zig" });
+    return allocInstallDirStringXdg(allocator);
 }
 const GetInstallDirOptions = struct {
     create: bool,
@@ -168,7 +180,7 @@ fn getInstallDir(allocator: Allocator, options: GetInstallDirOptions) ![]const u
     std.debug.assert(std.fs.path.isAbsolute(install_dir));
     loginfo("install directory '{s}'", .{install_dir});
     if (options.create) {
-        loggyMakeDirAbsolute(install_dir) catch |e| switch (e) {
+        loggyMakePath(install_dir) catch |e| switch (e) {
             error.PathAlreadyExists => {},
             else => return e,
         };
@@ -500,13 +512,13 @@ fn fetchDownloadIndex(allocator: Allocator, index_url: []const u8) !DownloadInde
     return DownloadIndex{ .text = text, .json = json };
 }
 
-fn loggyMakeDirAbsolute(dir_absolute: []const u8) !void {
+fn loggyMakePath(dir_absolute: []const u8) !void {
     if (builtin.os.tag == .windows) {
         loginfo("mkdir \"{s}\"", .{dir_absolute});
     } else {
-        loginfo("mkdir '{s}'", .{dir_absolute});
+        loginfo("mkdir -p '{s}'", .{dir_absolute});
     }
-    try std.fs.makeDirAbsolute(dir_absolute);
+    try std.fs.cwd().makePath(dir_absolute);
 }
 
 fn loggyDeleteTreeAbsolute(dir_absolute: []const u8) !void {
@@ -1004,7 +1016,7 @@ fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const 
     const installing_dir = try std.mem.concat(allocator, u8, &[_][]const u8{ compiler_dir, ".installing" });
     defer allocator.free(installing_dir);
     try loggyDeleteTreeAbsolute(installing_dir);
-    try loggyMakeDirAbsolute(installing_dir);
+    try loggyMakePath(installing_dir);
 
     const archive_basename = std.fs.path.basename(url);
     var archive_root_dir: []const u8 = undefined;
