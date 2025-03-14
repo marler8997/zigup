@@ -466,9 +466,17 @@ const Config = struct {
     }
 
     fn defaultZonPath(allocator: Allocator) ![]const u8 {
+        const zon_fname = "zigup.zon";
         return switch (builtin.os.tag) {
-            .linux => std.fs.path.join(allocator, &[_][]const u8{ try getHomeDir(), ".config/zigup.zon" }),
-            else => @compileError("Not supported yet"), // TODO: Complete list
+            .windows => std.fs.path.join(allocator, &[_][]const u8{
+                try std.fs.getAppDataDir(allocator, "zigup"),
+                zon_fname,
+            }),
+            else => std.fs.path.join(allocator, &[_][]const u8{
+                try getHomeDir(),
+                ".config",
+                zon_fname,
+            }),
         };
     }
 };
