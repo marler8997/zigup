@@ -139,18 +139,18 @@ fn allocInstallDirStringXdg(allocator: Allocator) ![]const u8 {
         if (xdg_data_home.len == 0) break :xdg_var;
         if (!std.fs.path.isAbsolute(xdg_data_home)) {
             std.log.err("$XDG_DATA_HOME environment variable '{s}' is not an absolute path", .{xdg_data_home});
-            return error.BadXdgDataHomeEnvironmentVariable;
+            return error.AlreadyReported;
         }
         return std.fs.path.join(allocator, &[_][]const u8{ xdg_data_home, "zigup" });
     }
     // .. then fallback to $HOME/.local/share/zigup
     const home = std.posix.getenv("HOME") orelse {
         std.log.err("cannot find install directory, neither $HOME nor $XDG_DATA_HOME environment variables are set", .{});
-        return error.MissingHomeEnvironmentVariable;
+        return error.AlreadyReported;
     };
     if (!std.fs.path.isAbsolute(home)) {
         std.log.err("$HOME environment variable '{s}' is not an absolute path", .{home});
-        return error.BadHomeEnvironmentVariable;
+        return error.AlreadyReported;
     }
     return std.fs.path.join(allocator, &[_][]const u8{ home, ".local", "share", "zigup" });
 }
