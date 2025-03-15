@@ -2,11 +2,7 @@
 
 Download and manage zig compilers.
 
-# Zigup Transition to Anyzig
-
-I personally no longer use zigup and now use "anyzig" instead (see https://github.com/marler8997/anyzig). The difference between them is that zigup helps the user manage multiple zig versions themselves whereas anyzig relies on each individual project to declare which version of zig it requires. Anyzig provides a single universal zig executable meant to be installed system-wide that works with any version of zig.
-
-Zigup will continue to be supported, however, new feature efforts will focus on anyzig instead. If you have a use case that zigup supports that anyzig doesn't please open an issue there.
+> NOTE: I no longer use zigup. I've switched to using [anyzig](https://github.com/marler8997/anyzig) instead and recommend others do the same (here's [why](#why-anyzig)). Zigup will continue to be supported for those that just love it so much!
 
 # How to Install
 
@@ -67,3 +63,7 @@ cp zig-out/bin/zigup BIN_PATH
 # Dependencies
 
 On linux and macos, zigup depends on `tar` to extract the compiler archive files (this may change in the future).
+
+# Why Anyzig?
+
+Zigup helps you download/switch which version of zig is invoked when you run `zig`. In contrast, Anyzig is one universal `zig` executable that invokes the correct version of zig based on the current project. Anyzig came about from the realization that if you have `zig` installed system-wide, then it should work with any Zig project, not just those that happen to match the current version you've installed/enabled. Instead of manually switching versions yourself, it uses the `minimum_zig_version` field in `build.zig.zon`. An added benefit of anyzig is any project that uses it is guaranteed to have their zig version both documented and up-to-date. In practice, I've also found that anyzig frees some mental load because you no longer need to track which version of Zig each project is on, which version the system is on, and keeping the two in sync.
