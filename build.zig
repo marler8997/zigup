@@ -300,19 +300,19 @@ fn addTests(
     });
     tests.addWithClean(.{
         .name = "test-already-fetched-7",
-        .env = _7,
+        .env = .{ .dir = _7 },
         .argv = &.{ "fetch", "0.7.0" },
         .check = .{ .expect_stderr_match = "already installed" },
     });
     tests.addWithClean(.{
         .name = "test-get-default-7",
-        .env = _7,
+        .env = .{ .dir = _7 },
         .argv = &.{"default"},
         .check = .{ .expect_stdout_exact = "0.7.0\n" },
     });
     tests.addWithClean(.{
         .name = "test-get-default-7-no-path",
-        .env = _7,
+        .env = .{ .dir = _7 },
         .add_path = false,
         .argv = &.{ "default", "0.7.0" },
         .check = .{ .expect_stderr_match = " is not in PATH" },
@@ -322,7 +322,7 @@ fn addTests(
     // because it's a directory
     tests.addWithClean(.{
         .name = "test-get-default-7-path-link-is-directory",
-        .env = _7,
+        .env = .{ .dir = _7 },
         .setup_option = "path-link-is-directory",
         .argv = &.{ "default", "0.7.0" },
         .checks = switch (builtin.os.tag) {
@@ -339,62 +339,64 @@ fn addTests(
 
     const _7_and_8 = tests.add(.{
         .name = "test-fetch-8",
-        .env = _7,
+        .env = .{ .dir = _7 },
+        .keep_compilers = "0.8.0",
         .argv = &.{ "fetch", "0.8.0" },
     });
     tests.addWithClean(.{
         .name = "test-get-default-7-after-fetch-8",
-        .env = _7_and_8,
+        .env = .{ .dir = _7_and_8 },
         .argv = &.{"default"},
         .check = .{ .expect_stdout_exact = "0.7.0\n" },
     });
     tests.addWithClean(.{
         .name = "test-already-fetched-8",
-        .env = _7_and_8,
+        .env = .{ .dir = _7_and_8 },
         .argv = &.{ "fetch", "0.8.0" },
         .check = .{ .expect_stderr_match = "already installed" },
     });
     const _7_and_default_8 = tests.add(.{
         .name = "test-set-default-8",
-        .env = _7_and_8,
+        .env = .{ .dir = _7_and_8 },
         .argv = &.{ "default", "0.8.0" },
         .check = .{ .expect_stdout_exact = "" },
     });
     tests.addWithClean(.{
         .name = "test-7-after-default-8",
-        .env = _7_and_default_8,
+        .env = .{ .dir = _7_and_default_8 },
         .argv = &.{"0.7.0"},
         .check = .{ .expect_stdout_exact = "" },
     });
 
     const master_7_and_8 = tests.add(.{
         .name = "test-master",
-        .env = _7_and_8,
+        .env = .{ .dir = _7_and_8, .with_compilers = "0.8.0" },
+        .keep_compilers = "0.8.0",
         .argv = &.{"master"},
         .check = .{ .expect_stdout_exact = "" },
     });
     tests.addWithClean(.{
         .name = "test-already-fetched-master",
-        .env = master_7_and_8,
+        .env = .{ .dir = master_7_and_8 },
         .argv = &.{ "fetch", "master" },
         .check = .{ .expect_stderr_match = "already installed" },
     });
 
     tests.addWithClean(.{
         .name = "test-default-after-master",
-        .env = master_7_and_8,
+        .env = .{ .dir = master_7_and_8 },
         .argv = &.{"default"},
         // master version could be anything so we won't check
     });
     tests.addWithClean(.{
         .name = "test-default-master",
-        .env = master_7_and_8,
+        .env = .{ .dir = master_7_and_8 },
         .argv = &.{ "default", "master" },
     });
     tests.addWithClean(.{
         .name = "test-default-not-in-path",
         .add_path = false,
-        .env = master_7_and_8,
+        .env = .{ .dir = master_7_and_8 },
         .argv = &.{ "default", "master" },
         .check = .{ .expect_stderr_match = " is not in PATH" },
     });
@@ -403,7 +405,7 @@ fn addTests(
     tests.addWithClean(.{
         .name = "test-default-master-with-another-zig",
         .setup_option = "another-zig",
-        .env = master_7_and_8,
+        .env = .{ .dir = master_7_and_8 },
         .argv = &.{ "default", "master" },
         .checks = &.{
             .{ .expect_stderr_match = "error: zig compiler '" },
@@ -415,7 +417,7 @@ fn addTests(
         const default8 = tests.add(.{
             .name = "test-default8-with-another-zig",
             .setup_option = "another-zig",
-            .env = master_7_and_8,
+            .env = .{ .dir = master_7_and_8 },
             .argv = &.{ "default", "0.8.0" },
             .checks = &.{
                 .{ .expect_stderr_match = "error: zig compiler '" },
@@ -425,7 +427,7 @@ fn addTests(
         // default compiler should still be set
         tests.addWithClean(.{
             .name = "test-default8-even-with-another-zig",
-            .env = default8,
+            .env = .{ .dir = default8 },
             .argv = &.{"default"},
             .check = .{ .expect_stdout_exact = "0.8.0\n" },
         });
@@ -433,7 +435,7 @@ fn addTests(
 
     tests.addWithClean(.{
         .name = "test-list",
-        .env = master_7_and_8,
+        .env = .{ .dir = master_7_and_8 },
         .argv = &.{"list"},
         .checks = &.{
             .{ .expect_stdout_match = "0.7.0\n" },
@@ -444,13 +446,13 @@ fn addTests(
     {
         const default_8 = tests.add(.{
             .name = "test-8-with-master",
-            .env = master_7_and_8,
+            .env = .{ .dir = master_7_and_8 },
             .argv = &.{"0.8.0"},
             .check = .{ .expect_stdout_exact = "" },
         });
         tests.addWithClean(.{
             .name = "test-default-8",
-            .env = default_8,
+            .env = .{ .dir = default_8 },
             .argv = &.{"default"},
             .check = .{ .expect_stdout_exact = "0.8.0\n" },
         });
@@ -458,20 +460,20 @@ fn addTests(
 
     tests.addWithClean(.{
         .name = "test-run-8",
-        .env = master_7_and_8,
+        .env = .{ .dir = master_7_and_8, .with_compilers = "0.8.0" },
         .argv = &.{ "run", "0.8.0", "version" },
-        .check = .{ .expect_stdout_exact = "0.8.0\n" },
+        .check = .{ .expect_stdout_match = "0.8.0\n" },
     });
     tests.addWithClean(.{
         .name = "test-run-doesnotexist",
-        .env = master_7_and_8,
+        .env = .{ .dir = master_7_and_8 },
         .argv = &.{ "run", "doesnotexist", "version" },
-        .check = .{ .expect_stderr_exact = "error: compiler 'doesnotexist' does not exist, fetch it first with: zigup fetch doesnotexist\n" },
+        .check = .{ .expect_stderr_match = "error: compiler 'doesnotexist' does not exist, fetch it first with: zigup fetch doesnotexist\n" },
     });
 
     tests.addWithClean(.{
         .name = "test-clean-default-master",
-        .env = master_7_and_8,
+        .env = .{ .dir = master_7_and_8 },
         .argv = &.{"clean"},
         .checks = &.{
             .{ .expect_stderr_match = "keeping '" },
@@ -486,7 +488,7 @@ fn addTests(
     {
         const default7 = tests.add(.{
             .name = "test-set-default-7",
-            .env = master_7_and_8,
+            .env = .{ .dir = master_7_and_8 },
             .argv = &.{ "default", "0.7.0" },
             .checks = &.{
                 .{ .expect_stdout_exact = "" },
@@ -494,7 +496,7 @@ fn addTests(
         });
         tests.addWithClean(.{
             .name = "test-clean-default-7",
-            .env = default7,
+            .env = .{ .dir = default7 },
             .argv = &.{"clean"},
             .checks = &.{
                 .{ .expect_stderr_match = "keeping '" },
@@ -510,7 +512,7 @@ fn addTests(
     {
         const keep8 = tests.add(.{
             .name = "test-keep8",
-            .env = master_7_and_8,
+            .env = .{ .dir = master_7_and_8 },
             .argv = &.{ "keep", "0.8.0" },
             .check = .{ .expect_stdout_exact = "" },
         });
@@ -518,7 +520,7 @@ fn addTests(
         {
             const keep8_default_7 = tests.add(.{
                 .name = "test-set-default-7-keep8",
-                .env = keep8,
+                .env = .{ .dir = keep8 },
                 .argv = &.{ "default", "0.7.0" },
                 .checks = &.{
                     .{ .expect_stdout_exact = "" },
@@ -526,7 +528,7 @@ fn addTests(
             });
             tests.addWithClean(.{
                 .name = "test-clean-default-7-keep8",
-                .env = keep8_default_7,
+                .env = .{ .dir = keep8_default_7 },
                 .argv = &.{"clean"},
                 .checks = &.{
                     .{ .expect_stderr_match = "keeping '" },
@@ -538,7 +540,7 @@ fn addTests(
             });
             tests.addWithClean(.{
                 .name = "test-clean-master",
-                .env = keep8_default_7,
+                .env = .{ .dir = keep8_default_7 },
                 .argv = &.{ "clean", "master" },
                 .checks = &.{
                     .{ .expect_stderr_match = "deleting '" },
@@ -550,7 +552,7 @@ fn addTests(
 
         const after_clean = tests.add(.{
             .name = "test-clean-keep8",
-            .env = keep8,
+            .env = .{ .dir = keep8 },
             .argv = &.{"clean"},
             .checks = &.{
                 .{ .expect_stderr_match = "keeping '" },
@@ -563,7 +565,7 @@ fn addTests(
 
         tests.addWithClean(.{
             .name = "test-set-default-7-after-clean",
-            .env = after_clean,
+            .env = .{ .dir = after_clean },
             .argv = &.{ "default", "0.7.0" },
             .checks = &.{
                 .{ .expect_stderr_match = "error: compiler '0.7.0' is not installed\n" },
@@ -572,7 +574,7 @@ fn addTests(
 
         const default8 = tests.add(.{
             .name = "test-set-default-8-after-clean",
-            .env = after_clean,
+            .env = .{ .dir = after_clean },
             .argv = &.{ "default", "0.8.0" },
             .checks = &.{
                 .{ .expect_stdout_exact = "" },
@@ -581,7 +583,7 @@ fn addTests(
 
         tests.addWithClean(.{
             .name = "test-clean8-as-default",
-            .env = default8,
+            .env = .{ .dir = default8 },
             .argv = &.{ "clean", "0.8.0" },
             .checks = &.{
                 .{ .expect_stderr_match = "error: cannot clean '0.8.0' (is default compiler)\n" },
@@ -590,7 +592,7 @@ fn addTests(
 
         const after_clean8 = tests.add(.{
             .name = "test-clean8",
-            .env = after_clean,
+            .env = .{ .dir = after_clean },
             .argv = &.{ "clean", "0.8.0" },
             .checks = &.{
                 .{ .expect_stderr_match = "deleting '" },
@@ -600,7 +602,7 @@ fn addTests(
         });
         tests.addWithClean(.{
             .name = "test-clean-after-clean8",
-            .env = after_clean8,
+            .env = .{ .dir = after_clean8 },
             .argv = &.{"clean"},
             .checks = &.{
                 .{ .expect_stderr_match = "keeping '" },
@@ -616,7 +618,8 @@ const native_exe_ext = builtin.os.tag.exeFileExt(builtin.cpu.arch);
 const TestOptions = struct {
     name: []const u8,
     add_path: bool = true,
-    env: ?std.Build.LazyPath = null,
+    env: ?struct { dir: std.Build.LazyPath, with_compilers: []const u8 = "" } = null,
+    keep_compilers: []const u8 = "",
     setup_option: []const u8 = "no-extra-setup",
     argv: []const []const u8,
     check: ?std.Build.Step.Run.StdIo.Check = null,
@@ -636,6 +639,11 @@ const Tests = struct {
     fn add(tests: Tests, opt: TestOptions) std.Build.LazyPath {
         return tests.addCommon(opt, .no_clean);
     }
+
+    fn compilersArg(arg: []const u8) []const u8 {
+        return if (arg.len == 0) "--no-compilers" else arg;
+    }
+
     fn addCommon(tests: Tests, opt: TestOptions, clean_opt: enum { no_clean, yes_clean }) std.Build.LazyPath {
         const b = tests.b;
         const run = std.Build.Step.Run.create(b, b.fmt("run {s}", .{opt.name}));
@@ -644,10 +652,12 @@ const Tests = struct {
         run.addArg(opt.name);
         run.addArg(if (opt.add_path) "--with-path" else "--no-path");
         if (opt.env) |env| {
-            run.addDirectoryArg(env);
+            run.addDirectoryArg(env.dir);
         } else {
             run.addArg("--no-input-environment");
         }
+        run.addArg(compilersArg(if (opt.env) |env| env.with_compilers else ""));
+        run.addArg(compilersArg(opt.keep_compilers));
         const out_env = run.addOutputDirectoryArg(opt.name);
         run.addArg(opt.setup_option);
         run.addFileArg(tests.zigup_exe.getEmittedBin());

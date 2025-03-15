@@ -5,6 +5,10 @@ const fixdeletetree = @import("fixdeletetree.zig");
 
 const exe_ext = builtin.os.tag.exeFileExt(builtin.cpu.arch);
 
+fn compilersArg(arg: []const u8) []const u8 {
+    return if (std.mem.eql(u8, arg, "--no-compilers")) "" else arg;
+}
+
 pub fn main() !void {
     var arena_instance = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     const arena = arena_instance.allocator();
@@ -14,10 +18,12 @@ pub fn main() !void {
     const test_name = all_args[1];
     const add_path_option = all_args[2];
     const in_env_dir = all_args[3];
-    const out_env_dir = all_args[4];
-    const setup_option = all_args[5];
-    const zigup_exe = all_args[6];
-    const zigup_args = all_args[7..];
+    const with_compilers = compilersArg(all_args[4]);
+    const keep_compilers = compilersArg(all_args[5]);
+    const out_env_dir = all_args[6];
+    const setup_option = all_args[7];
+    const zigup_exe = all_args[8];
+    const zigup_args = all_args[9..];
 
     const add_path = blk: {
         if (std.mem.eql(u8, add_path_option, "--with-path")) break :blk true;
@@ -45,7 +51,16 @@ pub fn main() !void {
     if (std.mem.eql(u8, in_env_dir, "--no-input-environment")) {
         try std.fs.cwd().makeDir(install_dir);
     } else {
-        try copyEnvDir(arena, in_env_dir, out_env_dir, in_env_dir, out_env_dir);
+        var shared_sibling_state: SharedSiblingState = .{};
+        try copyEnvDir(
+            arena,
+            in_env_dir,
+            out_env_dir,
+            in_env_dir,
+            out_env_dir,
+            .{ .with_compilers = with_compilers },
+            &shared_sibling_state,
+        );
     }
 
     var maybe_second_bin_dir: ?[]const u8 = null;
@@ -53,12 +68,10 @@ pub fn main() !void {
     if (std.mem.eql(u8, setup_option, "no-extra-setup")) {
         // nothing extra to setup
     } else if (std.mem.eql(u8, setup_option, "path-link-is-directory")) {
-        if (std.fs.cwd().access(path_link, .{})) {
-            try std.fs.cwd().deleteFile(path_link);
-        } else |err| switch (err) {
+        std.fs.cwd().deleteFile(path_link) catch |err| switch (err) {
             error.FileNotFound => {},
             else => |e| return e,
-        }
+        };
         try std.fs.cwd().makeDir(path_link);
     } else if (std.mem.eql(u8, setup_option, "another-zig")) {
         maybe_second_bin_dir = try std.fs.path.join(arena, &.{ out_env_dir, "bin2" });
@@ -107,21 +120,95 @@ pub fn main() !void {
     try child.spawn();
     const result = try child.wait();
     switch (result) {
-        .Exited => |c| std.process.exit(c),
+        .Exited => |c| if (c != 0) std.process.exit(c),
         else => |sig| {
             std.log.err("zigup terminated from '{s}' with {}", .{ @tagName(result), sig });
             std.process.exit(0xff);
         },
     }
+
+    {
+        var dir = try std.fs.cwd().openDir(install_dir, .{ .iterate = true });
+        defer dir.close();
+        var it = dir.iterate();
+        while (try it.next()) |install_entry| {
+            switch (install_entry.kind) {
+                .directory => {},
+                else => continue,
+            }
+            if (containsCompiler(keep_compilers, install_entry.name)) {
+                std.log.info("keeping compiler '{s}'", .{install_entry.name});
+                continue;
+            }
+            const files_path = try std.fs.path.join(arena, &.{ install_entry.name, "files" });
+            var files_dir = try dir.openDir(files_path, .{ .iterate = true });
+            defer files_dir.close();
+            var files_it = files_dir.iterate();
+            var is_first = true;
+            while (try files_it.next()) |files_entry| {
+                if (is_first) {
+                    std.log.info("cleaning compiler '{s}'", .{install_entry.name});
+                    is_first = false;
+                }
+                try fixdeletetree.deleteTree(files_dir, files_entry.name);
+            }
+        }
+    }
 }
 
+fn containsCompiler(compilers: []const u8, compiler: []const u8) bool {
+    var it = std.mem.splitScalar(u8, compilers, ',');
+    while (it.next()) |c| {
+        if (std.mem.eql(u8, c, compiler)) return true;
+    }
+    return false;
+}
+
+fn isCompilerFilesEntry(path: []const u8) ?[]const u8 {
+    var it = std.fs.path.NativeComponentIterator.init(path) catch std.debug.panic("invalid path '{s}'", .{path});
+    {
+        const name = (it.next() orelse return null).name;
+        if (!std.mem.eql(u8, name, "install")) return null;
+    }
+    const compiler = it.next() orelse return null;
+    const leaf = (it.next() orelse return null).name;
+    if (!std.mem.eql(u8, leaf, "files")) return null;
+    _ = it.next() orelse return null;
+    if (null != it.next()) return null;
+    return compiler.name;
+}
+
+const SharedSiblingState = struct {
+    logged: bool = false,
+};
 fn copyEnvDir(
     allocator: std.mem.Allocator,
     in_root: []const u8,
     out_root: []const u8,
     in_path: []const u8,
     out_path: []const u8,
+    opt: struct { with_compilers: []const u8 },
+    shared_sibling_state: *SharedSiblingState,
 ) !void {
+    std.debug.assert(std.mem.startsWith(u8, in_path, in_root));
+    std.debug.assert(std.mem.startsWith(u8, out_path, out_root));
+
+    {
+        const separators = switch (builtin.os.tag) {
+            .windows => "\\/",
+            else => "/",
+        };
+        const relative = std.mem.trimLeft(u8, in_path[in_root.len..], separators);
+        if (isCompilerFilesEntry(relative)) |compiler| {
+            const exclude = !containsCompiler(opt.with_compilers, compiler);
+            if (!shared_sibling_state.logged) {
+                shared_sibling_state.logged = true;
+                std.log.info("{s} compiler '{s}'", .{ if (exclude) "excluding" else "including", compiler });
+            }
+            if (exclude) return;
+        }
+    }
+
     var in_dir = try std.fs.cwd().openDir(in_path, .{ .iterate = true });
     defer in_dir.close();
 
@@ -134,7 +221,8 @@ fn copyEnvDir(
         switch (entry.kind) {
             .directory => {
                 try std.fs.cwd().makeDir(out_sub_path);
-                try copyEnvDir(allocator, in_root, out_root, in_sub_path, out_sub_path);
+                var shared_child_state: SharedSiblingState = .{};
+                try copyEnvDir(allocator, in_root, out_root, in_sub_path, out_sub_path, opt, &shared_child_state);
             },
             .file => try std.fs.cwd().copyFile(in_sub_path, std.fs.cwd(), out_sub_path, .{}),
             .sym_link => {
