@@ -41,11 +41,11 @@ zigup run <version> <args>...
 
 # How the compilers are managed
 
-zigup stores each compiler in a global "install directory" in a versioned subdirectory.  On posix systems the "install directory" is `$HOME/zig` and on windows the install directory will be a directory named "zig" in the same directory as the "zigup.exe".
+zigup stores each compiler in a global "install directory" in a versioned subdirectory.  On posix systems the "install directory" is `$HOME/.local/share/zigup` (or `$XDG_DATA_HOME/zigup`; see below) and on windows the install directory will be a directory named "zig" in the same directory as the "zigup.exe".
 
 zigup makes the zig program available by creating an entry in a directory that occurs in the `PATH` environment variable.  On posix systems this entry is a symlink to one of the `zig` executables in the install directory.  On windows this is an executable that forwards invocations to one of the `zig` executables in the install directory.
 
-Both the "install directory" and "path link" are configurable through command-line options `--install-dir` and `--path-link` respectively.
+Both the "install directory" and "path link" are configurable through command-line options `--install-dir` and `--path-link` respectively.  On posix systems the default "install directory" follows the [XDG basedir spec](https://specifications.freedesktop.org/basedir-spec/latest/#variables), ie. `$XDG_DATA_HOME/zigup` or `$HOME/.local/share/zigup` if `XDG_DATA_HOME` environment variable is empty or undefined.
 # Building
 
 Run `zig build` to build, `zig build test` to test and install with:
