@@ -75,7 +75,6 @@ code {
 </style>
 <script>
 
-const version = "v2025_01_02";
 function get(id) { return document.getElementById(id); }
 
 
@@ -180,7 +179,7 @@ function copyToClipboard(text) {
 
       if (arch_os != null) {
           const basename = 'zigup-' + arch_os + archive_ext;
-          const archive_url = 'https://github.com/marler8997/zigup/releases/download/' + version + '/' + basename;
+          const archive_url = 'https://github.com/marler8997/zigup/releases/latest/download/' + basename;
           html += '<br/><h2 style="margin:15px"><a href="' + archive_url + '">' + basename + '</a></h2>';
 
           html += '<br/><h2>Command Line Install:</h2>';
@@ -196,7 +195,7 @@ function copyToClipboard(text) {
               html += generateCommandHtml(ids, 'wget -O - ' + archive_url + ' | tar xz');
           }
           if (include_powershell) {
-              html += generateCommandHtml(ids, "Invoke-WebRequest -Uri " + archive_url + " -OutFile \"zigup-"  + arch_os + ".zip\"; Expand-Archive -Path \"zigup-" + arch_os + ".zip\" -DestinationPath \"zigup-" + version + "\"");
+              html += generateCommandHtml(ids, "Invoke-WebRequest -Uri " + archive_url + " -OutFile \"zigup-"  + arch_os + ".zip\"; Expand-Archive -Path \"zigup-" + arch_os + ".zip\" -DestinationPath \"zigup\"");
           }
           html += "</div></section>";
       }
@@ -204,7 +203,6 @@ function copyToClipboard(text) {
   }
 
   function bodyOnload() {
-      get("VersionDiv").innerHTML = version;
       updateInstallDiv()
 
       let userAgent = window.navigator.userAgent;
@@ -220,7 +218,6 @@ function copyToClipboard(text) {
 </head><body onload="bodyOnload()">
 
 <h1>Install Zigup</h1>
-<div id="VersionDiv"></div>
 <div style="margin:10px">
   <span id="ButtonLinux" class="FilterButton" onclick="toggleOs(OS_LINUX)">Linux</span>
   <span id="ButtonMacos" class="FilterButton" onclick="toggleOs(OS_MACOS)">macOS</span>
