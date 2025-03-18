@@ -398,6 +398,10 @@ const Config = struct {
     }
 
     fn ensureValid(conf: *Config, allocator: Allocator) !void {
+        // All fields must be set by this time.
+        inline for (comptime std.meta.fieldNames(Config)) |field_name|
+            if (@field(config, field_name) == null) unreachable;
+
         // Ensure we use absolute paths
         if (!std.fs.path.isAbsolute(conf.install_dir.?))
             conf.install_dir = try toAbsolute(allocator, conf.install_dir.?);
