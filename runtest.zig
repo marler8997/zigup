@@ -45,11 +45,23 @@ pub fn main() !void {
     //     try file.writer().print("this file marks this directory as the output for test: {s}\n", .{test_name});
     // }
 
+    const appdata = try std.fs.path.join(arena, &.{ out_env_dir, "appdata" });
     const path_link = try std.fs.path.join(arena, &.{ out_env_dir, "zig" ++ exe_ext });
     const install_dir = try std.fs.path.join(arena, &.{ out_env_dir, "install" });
+    const install_dir_parsed = switch (parseInstallDir(install_dir)) {
+        .good => |p| p,
+        .bad => |reason| std.debug.panic("failed to parse install dir '{s}': {s}", .{ install_dir, reason }),
+    };
+
+    const install_dir_setting_path = try std.fs.path.join(arena, &.{ appdata, "install-dir" });
+    defer arena.free(install_dir_setting_path);
 
     if (std.mem.eql(u8, in_env_dir, "--no-input-environment")) {
         try std.fs.cwd().makeDir(install_dir);
+        try std.fs.cwd().makeDir(appdata);
+        var file = try std.fs.cwd().createFile(install_dir_setting_path, .{});
+        defer file.close();
+        try file.writer().writeAll(install_dir);
     } else {
         var shared_sibling_state: SharedSiblingState = .{};
         try copyEnvDir(
@@ -61,6 +73,24 @@ pub fn main() !void {
             .{ .with_compilers = with_compilers },
             &shared_sibling_state,
         );
+
+        const input_install_dir = blk: {
+            var file = try std.fs.cwd().openFile(install_dir_setting_path, .{});
+            defer file.close();
+            break :blk try file.readToEndAlloc(arena, std.math.maxInt(usize));
+        };
+        defer arena.free(input_install_dir);
+        switch (parseInstallDir(input_install_dir)) {
+            .good => |input_install_dir_parsed| {
+                std.debug.assert(std.mem.eql(u8, install_dir_parsed.cache_o, input_install_dir_parsed.cache_o));
+                var file = try std.fs.cwd().createFile(install_dir_setting_path, .{});
+                defer file.close();
+                try file.writer().writeAll(install_dir);
+            },
+            .bad => {
+                // the install dir must have been customized, keep it
+            },
+        }
     }
 
     var maybe_second_bin_dir: ?[]const u8 = null;
@@ -92,11 +122,19 @@ pub fn main() !void {
 
     var argv = std.ArrayList([]const u8).init(arena);
     try argv.append(zigup_exe);
+    try argv.append("--appdata");
+    try argv.append(appdata);
     try argv.append("--path-link");
     try argv.append(path_link);
-    try argv.append("--install-dir");
-    try argv.append(install_dir);
     try argv.appendSlice(zigup_args);
+
+    if (true) {
+        try std.io.getStdErr().writer().writeAll("runtest exec: ");
+        for (argv.items) |arg| {
+            try std.io.getStdErr().writer().print(" {s}", .{arg});
+        }
+        try std.io.getStdErr().writer().writeAll("\n");
+    }
 
     var child = std.process.Child.init(argv.items, arena);
 
@@ -154,6 +192,30 @@ pub fn main() !void {
             }
         }
     }
+}
+
+const ParsedInstallDir = struct {
+    test_name: []const u8,
+    hash: []const u8,
+    cache_o: []const u8,
+};
+fn parseInstallDir(install_dir: []const u8) union(enum) {
+    good: ParsedInstallDir,
+    bad: []const u8,
+} {
+    {
+        const name = std.fs.path.basename(install_dir);
+        if (!std.mem.eql(u8, name, "install")) return .{ .bad = "did not end with 'install'" };
+    }
+    const test_dir = std.fs.path.dirname(install_dir) orelse return .{ .bad = "missing test dir" };
+    const test_name = std.fs.path.basename(test_dir);
+    const cache_dir = std.fs.path.dirname(test_dir) orelse return .{ .bad = "missing cache/hash dir" };
+    const hash = std.fs.path.basename(cache_dir);
+    return .{ .good = .{
+        .test_name = test_name,
+        .hash = hash,
+        .cache_o = std.fs.path.dirname(cache_dir) orelse return .{ .bad = "missing cache o dir" },
+    } };
 }
 
 fn containsCompiler(compilers: []const u8, compiler: []const u8) bool {

@@ -262,6 +262,47 @@ fn addTests(
     });
 
     tests.addWithClean(.{
+        .name = "test-get-install-dir",
+        .argv = &.{"get-install-dir"},
+    });
+    tests.addWithClean(.{
+        .name = "test-get-install-dir2",
+        .argv = &.{ "--install-dir", "/a/fake/install/dir", "get-install-dir" },
+        .checks = &.{
+            .{ .expect_stdout_exact = "/a/fake/install/dir\n" },
+        },
+    });
+    tests.addWithClean(.{
+        .name = "test-set-install-dir-relative",
+        .argv = &.{ "set-install-dir", "foo/bar" },
+        .checks = &.{
+            .{ .expect_stderr_match = "error: set-install-dir requires an absolute path" },
+        },
+    });
+
+    {
+        // just has to be an absolute path that exists
+        const install_dir = b.build_root.path.?;
+        const with_install_dir = tests.add(.{
+            .name = "test-set-install-dir",
+            .argv = &.{ "set-install-dir", install_dir },
+        });
+        tests.addWithClean(.{
+            .name = "test-get-install-dir3",
+            .argv = &.{"get-install-dir"},
+            .env = .{ .dir = with_install_dir },
+            .checks = &.{
+                .{ .expect_stdout_exact = b.fmt("{s}\n", .{install_dir}) },
+            },
+        });
+        tests.addWithClean(.{
+            .name = "test-revert-install-dir",
+            .argv = &.{"set-install-dir"},
+            .env = .{ .dir = with_install_dir },
+        });
+    }
+
+    tests.addWithClean(.{
         .name = "test-no-default",
         .argv = &.{"default"},
         .check = .{ .expect_stdout_exact = "<no-default>\n" },

@@ -26,6 +26,7 @@ const url_platform = os ++ "-" ++ arch;
 const json_platform = arch ++ "-" ++ os;
 const archive_ext = if (builtin.os.tag == .windows) "zip" else "tar.xz";
 
+var global_override_appdata: ?[]const u8 = null; // only used for testing
 var global_optional_install_dir: ?[]const u8 = null;
 var global_optional_path_link: ?[]const u8 = null;
 
@@ -131,7 +132,7 @@ fn ignoreHttpCallback(request: []const u8) void {
     _ = request;
 }
 
-fn allocInstallDirStringXdg(allocator: Allocator) ![]const u8 {
+fn allocInstallDirStringXdg(allocator: Allocator) error{AlreadyReported}![]const u8 {
     // see https://specifications.freedesktop.org/basedir-spec/latest/#variables
     // try $XDG_DATA_HOME/zigup first
     xdg_var: {
@@ -141,7 +142,7 @@ fn allocInstallDirStringXdg(allocator: Allocator) ![]const u8 {
             std.log.err("$XDG_DATA_HOME environment variable '{s}' is not an absolute path", .{xdg_data_home});
             return error.AlreadyReported;
         }
-        return std.fs.path.join(allocator, &[_][]const u8{ xdg_data_home, "zigup" });
+        return std.fs.path.join(allocator, &[_][]const u8{ xdg_data_home, "zigup" }) catch |e| oom(e);
     }
     // .. then fallback to $HOME/.local/share/zigup
     const home = std.posix.getenv("HOME") orelse {
@@ -152,21 +153,106 @@ fn allocInstallDirStringXdg(allocator: Allocator) ![]const u8 {
         std.log.err("$HOME environment variable '{s}' is not an absolute path", .{home});
         return error.AlreadyReported;
     }
-    return std.fs.path.join(allocator, &[_][]const u8{ home, ".local", "share", "zigup" });
+    return std.fs.path.join(allocator, &[_][]const u8{ home, ".local", "share", "zigup" }) catch |e| oom(e);
 }
 
-fn allocInstallDirString(allocator: Allocator) ![]const u8 {
-    // TODO: maybe support ZIG_INSTALL_DIR environment variable?
-    // TODO: maybe support a file on the filesystem to configure install dir?
+fn getSettingsDir(allocator: Allocator) ?[]const u8 {
+    const appdata: ?[]const u8 = std.fs.getAppDataDir(allocator, "zigup") catch |err| switch (err) {
+        error.OutOfMemory => |e| oom(e),
+        error.AppDataDirUnavailable => null,
+    };
+    // just used for testing, but note we still test getting the builtin appdata dir either way
+    if (global_override_appdata) |appdata_override| {
+        if (appdata) |a| allocator.free(a);
+        return allocator.dupe(u8, appdata_override) catch |e| oom(e);
+    }
+    return appdata;
+}
+
+fn readInstallDir(allocator: Allocator) !?[]const u8 {
+    const settings_dir_path = getSettingsDir(allocator) orelse return null;
+    defer allocator.free(settings_dir_path);
+    const setting_path = std.fs.path.join(allocator, &.{ settings_dir_path, "install-dir" }) catch |e| oom(e);
+    defer allocator.free(setting_path);
+    const content = blk: {
+        var file = std.fs.cwd().openFile(setting_path, .{}) catch |err| switch (err) {
+            error.FileNotFound => return null,
+            else => |e| {
+                std.log.err("open '{s}' failed with {s}", .{ setting_path, @errorName(e) });
+                return error.AlreadyReported;
+            },
+        };
+        defer file.close();
+        break :blk file.readToEndAlloc(allocator, 9999) catch |err| {
+            std.log.err("read install dir from '{s}' failed with {s}", .{ setting_path, @errorName(err) });
+            return error.AlreadyReported;
+        };
+    };
+    errdefer allocator.free(content);
+    const stripped = std.mem.trimRight(u8, content, " \r\n");
+
+    if (!std.fs.path.isAbsolute(stripped)) {
+        std.log.err("install directory '{s}' is not an absolute path, fix this by running `zigup set-install-dir`", .{stripped});
+        return error.BadInstallDirSetting;
+    }
+
+    return allocator.realloc(content, stripped.len) catch |e| oom(e);
+}
+
+fn saveInstallDir(allocator: Allocator, maybe_dir: ?[]const u8) !void {
+    const settings_dir_path = getSettingsDir(allocator) orelse {
+        std.log.err("cannot save install dir, unable to find a suitable settings directory", .{});
+        return error.AlreadyReported;
+    };
+    defer allocator.free(settings_dir_path);
+    const setting_path = std.fs.path.join(allocator, &.{ settings_dir_path, "install-dir" }) catch |e| oom(e);
+    defer allocator.free(setting_path);
+    if (maybe_dir) |d| {
+        if (std.fs.path.dirname(setting_path)) |dir| try std.fs.cwd().makePath(dir);
+
+        {
+            const file = try std.fs.cwd().createFile(setting_path, .{});
+            defer file.close();
+            try file.writer().writeAll(d);
+        }
+
+        // sanity check, read it back
+        const readback = (try readInstallDir(allocator)) orelse {
+            std.log.err("unable to readback install-dir after saving it", .{});
+            return error.AlreadyReported;
+        };
+        defer allocator.free(readback);
+        if (!std.mem.eql(u8, readback, d)) {
+            std.log.err("saved install dir readback mismatch\nwrote: '{s}'\nread : '{s}'\n", .{ d, readback });
+            return error.AlreadyReported;
+        }
+    } else {
+        std.fs.cwd().deleteFile(setting_path) catch |err| switch (err) {
+            error.FileNotFound => {},
+            else => |e| return e,
+        };
+    }
+}
+
+fn getBuiltinInstallDir(allocator: Allocator) error{AlreadyReported}![]const u8 {
     if (builtin.os.tag == .windows) {
-        const self_exe_dir = try std.fs.selfExeDirPathAlloc(allocator);
+        const self_exe_dir = std.fs.selfExeDirPathAlloc(allocator) catch |e| {
+            std.log.err("failed to get exe dir path with {s}", .{@errorName(e)});
+            return error.AlreadyReported;
+        };
         defer allocator.free(self_exe_dir);
-        return std.fs.path.join(allocator, &.{ self_exe_dir, "zig" });
+        return std.fs.path.join(allocator, &.{ self_exe_dir, "zig" }) catch |e| oom(e);
     }
     return allocInstallDirStringXdg(allocator);
 }
+
+fn allocInstallDirString(allocator: Allocator) error{ AlreadyReported, BadInstallDirSetting }![]const u8 {
+    if (try readInstallDir(allocator)) |d| return d;
+    return try getBuiltinInstallDir(allocator);
+}
 const GetInstallDirOptions = struct {
     create: bool,
+    log: bool = true,
 };
 fn getInstallDir(allocator: Allocator, options: GetInstallDirOptions) ![]const u8 {
     var optional_dir_to_free_on_error: ?[]const u8 = null;
@@ -178,7 +264,9 @@ fn getInstallDir(allocator: Allocator, options: GetInstallDirOptions) ![]const u
         break :init optional_dir_to_free_on_error.?;
     };
     std.debug.assert(std.fs.path.isAbsolute(install_dir));
-    loginfo("install directory '{s}'", .{install_dir});
+    if (options.log) {
+        loginfo("install directory '{s}'", .{install_dir});
+    }
     if (options.create) {
         loggyMakePath(install_dir) catch |e| switch (e) {
             error.PathAlreadyExists => {},
@@ -205,8 +293,20 @@ fn toAbsolute(allocator: Allocator, path: []const u8) ![]u8 {
     return std.fs.path.join(allocator, &[_][]const u8{ cwd, path });
 }
 
-fn help() void {
-    std.io.getStdErr().writeAll(
+fn help(allocator: Allocator) !void {
+    const builtin_install_dir = getBuiltinInstallDir(allocator) catch |err| switch (err) {
+        error.AlreadyReported => "unknown (see error printed above)",
+    };
+    const current_install_dir = allocInstallDirString(allocator) catch |err| switch (err) {
+        error.AlreadyReported => "unknown (see error printed above)",
+        error.BadInstallDirSetting => "invalid (fix with zigup set-install-dir)",
+    };
+    const setting_file: []const u8 = blk: {
+        if (getSettingsDir(allocator)) |d| break :blk std.fs.path.join(allocator, &.{ d, "install-dir" }) catch |e| oom(e);
+        break :blk "unavailable";
+    };
+
+    try std.io.getStdErr().writer().print(
         \\Download and manage zig compilers.
         \\
         \\Common Usage:
@@ -219,6 +319,12 @@ fn help() void {
         \\                                that aren't the default, master, or marked to keep.
         \\  zigup keep VERSION            mark a compiler to be kept during clean
         \\  zigup run VERSION ARGS...     run the given VERSION of the compiler with the given ARGS...
+        \\
+        \\  zigup get-install-dir         prints the install directory to stdout
+        \\  zigup set-install-dir [PATH]  set the default install directory, omitting the PATH reverts to the builtin default
+        \\                                current default: {s}
+        \\                                setting file   : {s}
+        \\                                builtin default: {s}
         \\
         \\Uncommon Usage:
         \\
@@ -234,7 +340,13 @@ fn help() void {
     ++ " " ++ default_index_url ++
         \\
         \\
-    ) catch unreachable;
+    ,
+        .{
+            current_install_dir,
+            setting_file,
+            builtin_install_dir,
+        },
+    );
 }
 
 fn getCmdOpt(args: [][:0]u8, i: *usize) ![]const u8 {
@@ -287,8 +399,11 @@ pub fn main2() !u8 {
             } else if (std.mem.eql(u8, "--index", arg)) {
                 index_url = try getCmdOpt(args, &i);
             } else if (std.mem.eql(u8, "-h", arg) or std.mem.eql(u8, "--help", arg)) {
-                help();
+                try help(allocator);
                 return 0;
+            } else if (std.mem.eql(u8, "--appdata", arg)) {
+                // NOTE: this is a private option just used for testing
+                global_override_appdata = try getCmdOpt(args, &i);
             } else {
                 if (newlen == 0 and std.mem.eql(u8, "run", arg)) {
                     return try runCompiler(allocator, args[i + 1 ..]);
@@ -300,8 +415,40 @@ pub fn main2() !u8 {
         args = args[0..newlen];
     }
     if (args.len == 0) {
-        help();
+        try help(allocator);
         return 1;
+    }
+    if (std.mem.eql(u8, "get-install-dir", args[0])) {
+        if (args.len != 1) {
+            std.log.err("get-install-dir does not accept any cmdline arguments", .{});
+            return 1;
+        }
+        const install_dir = getInstallDir(allocator, .{ .create = false, .log = false }) catch |err| switch (err) {
+            error.AlreadyReported => return 1,
+            else => |e| return e,
+        };
+        try std.io.getStdOut().writer().writeAll(install_dir);
+        try std.io.getStdOut().writer().writeAll("\n");
+        return 0;
+    }
+    if (std.mem.eql(u8, "set-install-dir", args[0])) {
+        const set_args = args[1..];
+        switch (set_args.len) {
+            0 => try saveInstallDir(allocator, null),
+            1 => {
+                const path = set_args[0];
+                if (!std.fs.path.isAbsolute(path)) {
+                    std.log.err("set-install-dir requires an absolute path", .{});
+                    return 1;
+                }
+                try saveInstallDir(allocator, path);
+            },
+            else => |set_arg_count| {
+                std.log.err("set-install-dir requires 0 or 1 cmdline arg but got {}", .{set_arg_count});
+                return 1;
+            },
+        }
+        return 0;
     }
     if (std.mem.eql(u8, "fetch-index", args[0])) {
         if (args.len != 1) {
