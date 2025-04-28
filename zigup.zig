@@ -319,6 +319,8 @@ fn help(allocator: Allocator) !void {
         \\                                that aren't the default, master, or marked to keep.
         \\  zigup keep VERSION            mark a compiler to be kept during clean
         \\  zigup run VERSION ARGS...     run the given VERSION of the compiler with the given ARGS...
+        \\  zigup latest                  set the default compiler to the current local master version without
+        \\                                downloading anything
         \\
         \\  zigup get-install-dir         prints the install directory to stdout
         \\  zigup set-install-dir [PATH]  set the default install directory, omitting the PATH reverts to the builtin default
@@ -529,6 +531,18 @@ pub fn main2() !u8 {
         }
         std.log.err("'default' command requires 1 or 2 arguments but got {d}", .{args.len - 1});
         return 1;
+    }
+    if (std.mem.eql(u8, "latest", args[0])) {
+        if (args.len != 1) {
+            std.log.err("'latest' command has no arguments", .{});
+            return 1;
+        }
+        const install_dir_string = try getInstallDir(allocator, .{ .create = false });
+        defer allocator.free(install_dir_string);
+        const compiler_dir = try std.fs.path.join(allocator, &[_][]const u8{ install_dir_string, "master" });
+        defer allocator.free(compiler_dir);
+        try setDefaultCompiler(allocator, compiler_dir, .verify_existence);
+        return 0;
     }
     if (args.len == 1) {
         try fetchCompiler(allocator, index_url, args[0], .set_default);
