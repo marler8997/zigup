@@ -331,7 +331,7 @@ fn addTests(
     //       it should be more permanent
     if (false) tests.addWithClean(.{
         .name = "test-dev-version",
-        .argv = &.{"0.14.0-dev.2465+70de2f3a7"},
+        .argv = &.{"0.15.0-dev.621+a63f7875f"},
         .check = .{ .expect_stdout_exact = "" },
     });
 
