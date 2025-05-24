@@ -22,8 +22,8 @@ const os = switch (builtin.os.tag) {
     .windows => "windows",
     else => @compileError("Unsupported OS"),
 };
-const url_platform = os ++ "-" ++ arch;
-const json_platform = arch ++ "-" ++ os;
+const os_arch = os ++ "-" ++ arch;
+const arch_os = arch ++ "-" ++ os;
 const archive_ext = if (builtin.os.tag == .windows) "zip" else "tar.xz";
 
 var global_override_appdata: ?[]const u8 = null; // only used for testing
@@ -605,7 +605,7 @@ fn fetchCompiler(
         optional_download_index = try fetchDownloadIndex(allocator, index_url);
         const master = optional_download_index.?.json.value.object.get(version_arg).?;
         const compiler_version = master.object.get("version").?.string;
-        const master_linux = master.object.get(json_platform).?;
+        const master_linux = master.object.get(arch_os).?;
         const master_linux_tarball = master_linux.object.get("tarball").?.string;
         break :blk VersionUrl{ .version = compiler_version, .url = master_linux_tarball };
     };
@@ -1142,15 +1142,112 @@ fn createExeLink(link_target: []const u8, path_link: []const u8) !void {
     try file.writer().writeAll(win32exelink.content[win32exelink.exe_offset + link_target.len ..]);
 }
 
-const VersionKind = enum { release, dev };
+const VersionKind = union(enum) { release: Release, dev };
 fn determineVersionKind(version: []const u8) VersionKind {
-    return if (std.mem.indexOfAny(u8, version, "-+")) |_| .dev else .release;
+    const v = SemanticVersion.parse(version) orelse std.debug.panic(
+        "invalid version '{s}'",
+        .{version},
+    );
+    if (v.pre != null or v.build != null) return .dev;
+    return .{ .release = .{ .major = v.major, .minor = v.minor, .patch = v.patch } };
 }
+
+const Release = struct {
+    major: usize,
+    minor: usize,
+    patch: usize,
+    pub fn order(a: Release, b: Release) std.math.Order {
+        if (a.major != b.major) return std.math.order(a.major, b.major);
+        if (a.minor != b.minor) return std.math.order(a.minor, b.minor);
+        return std.math.order(a.patch, b.patch);
+    }
+};
+
+// The Zig release where the OS-ARCH in the url was swapped to ARCH-OS
+const arch_os_swap_release: Release = .{ .major = 0, .minor = 14, .patch = 1 };
+
+const SemanticVersion = struct {
+    const max_pre = 50;
+    const max_build = 50;
+    const max_string = 50 + max_pre + max_build;
+
+    major: usize,
+    minor: usize,
+    patch: usize,
+    pre: ?std.BoundedArray(u8, max_pre),
+    build: ?std.BoundedArray(u8, max_build),
+
+    pub fn array(self: *const SemanticVersion) std.BoundedArray(u8, max_string) {
+        var result: std.BoundedArray(u8, max_string) = undefined;
+        const roundtrip = std.fmt.bufPrint(&result.buffer, "{}", .{self}) catch unreachable;
+        result.len = roundtrip.len;
+        return result;
+    }
+
+    pub fn parse(s: []const u8) ?SemanticVersion {
+        const parsed = std.SemanticVersion.parse(s) catch |e| switch (e) {
+            error.Overflow, error.InvalidVersion => return null,
+        };
+        std.debug.assert(s.len <= max_string);
+
+        var result: SemanticVersion = .{
+            .major = parsed.major,
+            .minor = parsed.minor,
+            .patch = parsed.patch,
+            .pre = if (parsed.pre) |pre| std.BoundedArray(u8, max_pre).init(pre.len) catch |e| switch (e) {
+                error.Overflow => std.debug.panic("semantic version pre '{s}' is too long (max is {})", .{ pre, max_pre }),
+            } else null,
+            .build = if (parsed.build) |build| std.BoundedArray(u8, max_build).init(build.len) catch |e| switch (e) {
+                error.Overflow => std.debug.panic("semantic version build '{s}' is too long (max is {})", .{ build, max_build }),
+            } else null,
+        };
+        if (parsed.pre) |pre| @memcpy(result.pre.?.slice(), pre);
+        if (parsed.build) |build| @memcpy(result.build.?.slice(), build);
+
+        {
+            // sanity check, ensure format gives us the same string back we just parsed
+            const roundtrip = result.array();
+            if (!std.mem.eql(u8, roundtrip.slice(), s)) std.debug.panic(
+                "codebug parse/format version mismatch:\nparsed: '{s}'\nformat: '{s}'\n",
+                .{ s, roundtrip.slice() },
+            );
+        }
+
+        return result;
+    }
+    pub fn ref(self: *const SemanticVersion) std.SemanticVersion {
+        return .{
+            .major = self.major,
+            .minor = self.minor,
+            .patch = self.patch,
+            .pre = if (self.pre) |*pre| pre.slice() else null,
+            .build = if (self.build) |*build| build.slice() else null,
+        };
+    }
+    pub fn format(
+        self: SemanticVersion,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try self.ref().format(fmt, options, writer);
+    }
+};
 
 fn getDefaultUrl(allocator: Allocator, compiler_version: []const u8) ![]const u8 {
     return switch (determineVersionKind(compiler_version)) {
-        .dev => try std.fmt.allocPrint(allocator, "https://ziglang.org/builds/zig-" ++ url_platform ++ "-{0s}." ++ archive_ext, .{compiler_version}),
-        .release => try std.fmt.allocPrint(allocator, "https://ziglang.org/download/{s}/zig-" ++ url_platform ++ "-{0s}." ++ archive_ext, .{compiler_version}),
+        .dev => try std.fmt.allocPrint(allocator, "https://ziglang.org/builds/zig-" ++ arch_os ++ "-{0s}." ++ archive_ext, .{compiler_version}),
+        .release => |release| try std.fmt.allocPrint(
+            allocator,
+            "https://ziglang.org/download/{s}/zig-{1s}-{0s}." ++ archive_ext,
+            .{
+                compiler_version,
+                switch (release.order(arch_os_swap_release)) {
+                    .lt => os_arch,
+                    .gt, .eq => arch_os,
+                },
+            },
+        ),
     };
 }
 

@@ -318,9 +318,10 @@ fn addTests(
         .check = .{ .expect_stderr_match = "error: compiler '0.7.0' is not installed\n" },
     });
 
+    const non_existent_version = "0.0.99";
     tests.addWithClean(.{
         .name = "test-bad-version",
-        .argv = &.{"THIS_ZIG_VERSION_DOES_NOT_EXIT"},
+        .argv = &.{non_existent_version},
         .checks = &.{
             .{ .expect_stderr_match = "error: could not download '" },
         },
@@ -331,7 +332,7 @@ fn addTests(
     //       it should be more permanent
     if (false) tests.addWithClean(.{
         .name = "test-dev-version",
-        .argv = &.{"0.14.0-dev.2465+70de2f3a7"},
+        .argv = &.{"0.15.0-dev.621+a63f7875f"},
         .check = .{ .expect_stdout_exact = "" },
     });
 
