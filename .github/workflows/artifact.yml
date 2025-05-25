@@ -24,6 +24,7 @@ jobs:
             zig-out/zigup-arm-linux.tar.gz
             zig-out/zigup-powerpc64le-linux.tar.gz
             zig-out/zigup-riscv64-linux.tar.gz
+            zig-out/zigup-s390x-linux.tar.gz
             zig-out/zigup-x86-linux.tar.gz
             zig-out/zigup-x86-windows.tar.gz
             zig-out/zigup-x86_64-linux.tar.gz
