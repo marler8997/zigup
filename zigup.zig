@@ -12,6 +12,7 @@ const arch = switch (builtin.cpu.arch) {
     .arm => "armv7a",
     .powerpc64le => "powerpc64le",
     .riscv64 => "riscv64",
+    .s390x => "s390x",
     .x86 => "x86",
     .x86_64 => "x86_64",
     else => @compileError("Unsupported CPU Architecture"),
