@@ -1144,11 +1144,8 @@ fn createExeLink(link_target: []const u8, path_link: []const u8) !void {
 }
 
 const VersionKind = union(enum) { release: Release, dev };
-fn determineVersionKind(version: []const u8) VersionKind {
-    const v = SemanticVersion.parse(version) orelse std.debug.panic(
-        "invalid version '{s}'",
-        .{version},
-    );
+fn determineVersionKind(version: []const u8) !VersionKind {
+    const v = SemanticVersion.parse(version) orelse return error.InvalidVersion;
     if (v.pre != null or v.build != null) return .dev;
     return .{ .release = .{ .major = v.major, .minor = v.minor, .patch = v.patch } };
 }
@@ -1236,7 +1233,7 @@ const SemanticVersion = struct {
 };
 
 fn getDefaultUrl(allocator: Allocator, compiler_version: []const u8) ![]const u8 {
-    return switch (determineVersionKind(compiler_version)) {
+    return switch (try determineVersionKind(compiler_version)) {
         .dev => try std.fmt.allocPrint(allocator, "https://ziglang.org/builds/zig-" ++ arch_os ++ "-{0s}." ++ archive_ext, .{compiler_version}),
         .release => |release| try std.fmt.allocPrint(
             allocator,
