@@ -1143,13 +1143,6 @@ fn createExeLink(link_target: []const u8, path_link: []const u8) !void {
     try file.writer().writeAll(win32exelink.content[win32exelink.exe_offset + link_target.len ..]);
 }
 
-const VersionKind = union(enum) { release: Release, dev };
-fn determineVersionKind(version: []const u8) !VersionKind {
-    const v = SemanticVersion.parse(version) orelse return error.InvalidVersion;
-    if (v.pre != null or v.build != null) return .dev;
-    return .{ .release = .{ .major = v.major, .minor = v.minor, .patch = v.patch } };
-}
-
 const Release = struct {
     major: usize,
     minor: usize,
@@ -1233,20 +1226,27 @@ const SemanticVersion = struct {
 };
 
 fn getDefaultUrl(allocator: Allocator, compiler_version: []const u8) ![]const u8 {
-    return switch (try determineVersionKind(compiler_version)) {
-        .dev => try std.fmt.allocPrint(allocator, "https://ziglang.org/builds/zig-" ++ arch_os ++ "-{0s}." ++ archive_ext, .{compiler_version}),
-        .release => |release| try std.fmt.allocPrint(
-            allocator,
-            "https://ziglang.org/download/{s}/zig-{1s}-{0s}." ++ archive_ext,
-            .{
-                compiler_version,
-                switch (release.order(arch_os_swap_release)) {
-                    .lt => os_arch,
-                    .gt, .eq => arch_os,
-                },
+    const sv = SemanticVersion.parse(compiler_version) orelse errExit(
+        "invalid zig version '{s}', unable to create a download URL for it",
+        .{compiler_version},
+    );
+    if (sv.pre != null or sv.build != null) return try std.fmt.allocPrint(
+        allocator,
+        "https://ziglang.org/builds/zig-" ++ arch_os ++ "-{0s}." ++ archive_ext,
+        .{compiler_version},
+    );
+    const release: Release = .{ .major = sv.major, .minor = sv.minor, .patch = sv.patch };
+    return try std.fmt.allocPrint(
+        allocator,
+        "https://ziglang.org/download/{s}/zig-{1s}-{0s}." ++ archive_ext,
+        .{
+            compiler_version,
+            switch (release.order(arch_os_swap_release)) {
+                .lt => os_arch,
+                .gt, .eq => arch_os,
             },
-        ),
-    };
+        },
+    );
 }
 
 fn installCompiler(allocator: Allocator, compiler_dir: []const u8, url: []const u8) !void {
@@ -1353,6 +1353,11 @@ fn logRun(allocator: Allocator, argv: []const []const u8) !void {
     }
     std.debug.assert(offset == buffer.len);
     loginfo("[RUN] {s}", .{buffer});
+}
+
+fn errExit(comptime fmt: []const u8, args: anytype) noreturn {
+    std.log.err(fmt, args);
+    std.process.exit(0xff);
 }
 
 pub fn getCommandStringLength(argv: []const []const u8) usize {
