@@ -319,9 +319,17 @@ fn addTests(
         .check = .{ .expect_stderr_match = "error: compiler '0.7.0' is not installed\n" },
     });
 
+    tests.addWithClean(.{
+        .name = "test-invalid-version",
+        .argv = &.{"this-version-is-not-valid"},
+        .checks = &.{
+            .{ .expect_stderr_match = "error: invalid zig version 'this-version-is-not-valid', unable to create a download URL for it\n" },
+        },
+    });
+
     const non_existent_version = "0.0.99";
     tests.addWithClean(.{
-        .name = "test-bad-version",
+        .name = "test-valid-but-nonexistent-version",
         .argv = &.{non_existent_version},
         .checks = &.{
             .{ .expect_stderr_match = "error: could not download '" },
